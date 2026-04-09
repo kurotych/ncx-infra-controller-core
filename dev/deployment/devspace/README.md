@@ -79,6 +79,8 @@ Important:
 
 Once the prerequisites are ready, run:
 
+> **Minikube users:** Run `eval $(minikube docker-env)` first so that images are built inside Minikube's Docker daemon.
+
 ```bash
 devspace deploy
 ```
