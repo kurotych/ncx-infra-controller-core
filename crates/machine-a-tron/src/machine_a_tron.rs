@@ -96,21 +96,21 @@ impl MachineATron {
             })
             .collect();
 
-        for machine in &machines {
-            // Inform the API that we have finished our reboot (ie. scout is now running)
-            self.app_context
-                .api_client()
-                .add_expected_machine(
-                    machine.host_info().bmc_mac_address.to_string(),
-                    machine.host_info().serial.clone(),
-
-                )
-                .await
-                .inspect_err(|e| {
-                    tracing::warn!(error=?e, "error adding expected machine, likely already ingested");
-                })
-                .ok();
-        }
+        // for machine in &machines {
+        //     // Inform the API that we have finished our reboot (ie. scout is now running)
+        //     self.app_context
+        //         .api_client()
+        //         .add_expected_machine(
+        //             machine.host_info().bmc_mac_address.to_string(),
+        //             machine.host_info().serial.clone(),
+        //
+        //         )
+        //         .await
+        //         .inspect_err(|e| {
+        //             tracing::warn!(error=?e, "error adding expected machine, likely already ingested");
+        //         })
+        //         .ok();
+        // }
 
         Ok(machines)
     }
