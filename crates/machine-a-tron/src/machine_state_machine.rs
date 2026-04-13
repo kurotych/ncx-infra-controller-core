@@ -494,6 +494,21 @@ impl MachineStateMachine {
     }
 
     async fn bmc_dhcp_discovery(&self) -> DhcpRelayResult<DhcpResponseInfo> {
+        if !self.config.dhcp_enabled {
+            let static_ip = self.config.static_bmc_ip.expect(
+                "static_bmc_ip must be set when dhcp_enabled = false",
+            );
+            tracing::info!(
+                %static_ip,
+                mac = %self.machine_info.bmc_mac_address(),
+                "DHCP disabled, using static BMC IP"
+            );
+            return Ok(DhcpResponseInfo {
+                interface_id: None,
+                ip_address: static_ip,
+            });
+        }
+
         let start = Instant::now();
         dhcp_wrapper::request_ip(
             self.app_context.api_client(),
@@ -954,7 +969,7 @@ impl MachineStateMachine {
     }
 
     fn is_bmc_only(info: &MachineInfo, config: &MachineConfig) -> bool {
-        matches!(info, MachineInfo::Dpu(_)) && config.dpus_in_nic_mode
+        !config.dhcp_enabled || (matches!(info, MachineInfo::Dpu(_)) && config.dpus_in_nic_mode)
     }
 }
 

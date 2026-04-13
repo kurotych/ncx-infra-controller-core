@@ -115,6 +115,16 @@ pub struct MachineConfig {
 
     #[serde(default)]
     pub dpu_agent_version: Option<String>,
+
+    /// When false, DHCP discovery is skipped and `static_bmc_ip` is used instead.
+    /// Machines are treated as BMC-only (no PXE boot). Use `expected-machines add
+    /// --bmc-ip-address` to pre-register the BMC in the database.
+    #[serde(default = "default_true")]
+    pub dhcp_enabled: bool,
+
+    /// Static BMC IP to use when `dhcp_enabled = false`. Required when DHCP is disabled.
+    #[serde(default)]
+    pub static_bmc_ip: Option<Ipv4Addr>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Eq, PartialEq)]
