@@ -56,7 +56,7 @@ permissive_mode = false
 casbin_policy_file = "/etc/forge/carbide-api/casbin-policy.csv"
 
 [auth.trust]
-spiffe_trust_domain = "forge.local"
+spiffe_trust_domain = "{{ .Values.global.spiffe.trustDomain }}"
 spiffe_service_base_paths = [
   "/forge-system/sa/",
   "/default/sa/",

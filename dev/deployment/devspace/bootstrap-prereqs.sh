@@ -28,6 +28,7 @@ VAULT_KV_MOUNT="${LOCAL_DEV_VAULT_KV_MOUNT:-secrets}"
 VAULT_PKI_MOUNT="${LOCAL_DEV_VAULT_PKI_MOUNT:-certs}"
 VAULT_PKI_ROLE_NAME="${LOCAL_DEV_VAULT_PKI_ROLE_NAME:-forge-cluster}"
 VAULT_AUTH_MODE="${LOCAL_DEV_VAULT_AUTH_MODE:-root-token}"
+VAULT_SPIFFE_TRUST_DOMAIN="${LOCAL_DEV_SPIFFE_TRUST_DOMAIN:-forge.local}"
 
 CERT_ISSUER_KIND="${LOCAL_DEV_CERT_ISSUER_KIND:-Issuer}"
 CERT_ISSUER_NAME="${LOCAL_DEV_CERT_ISSUER_NAME:-local-ca-issuer}"
@@ -295,7 +296,7 @@ EOF
       allow_localhost=true \
       require_cn=false \
       max_ttl='72h' \
-      allowed_uri_sans='spiffe://forge.local/*' >/dev/null
+      allowed_uri_sans='spiffe://${VAULT_SPIFFE_TRUST_DOMAIN}/*' >/dev/null
 
     vault kv get '${VAULT_KV_MOUNT}/machines/bmc/site/root' >/dev/null 2>&1 || \
       echo '{\"UsernamePassword\":{\"username\":\"root\",\"password\":\"vault-password\"}}' | \
@@ -428,6 +429,7 @@ print_summary() {
 Bootstrap complete.
 
 Namespace: ${NAMESPACE}
+Vault spifee trust domain: ${VAULT_SPIFFE_TRUST_DOMAIN}
 Generated values: ${VALUES_FILE}
 Postgres endpoint: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
 Vault address: ${VAULT_ADDR}

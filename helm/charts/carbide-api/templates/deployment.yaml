@@ -95,6 +95,8 @@ spec:
                   key: FORGE_VAULT_PKI_MOUNT
             - name: VAULT_PKI_ROLE_NAME
               value: {{ .Values.env.VAULT_PKI_ROLE_NAME | quote }}
+            - name: VAULT_SPIFFE_TRUST_DOMAIN
+              value: {{ .Values.global.spiffe.trustDomain | quote }}
             - name: DATASTORE_USER
               valueFrom:
                 secretKeyRef:

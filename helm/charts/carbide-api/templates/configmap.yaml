@@ -8,9 +8,9 @@ metadata:
 data:
   carbide-api-config.toml: |
     {{- if .Values.configFiles.carbideApiConfig }}
-    {{- .Values.configFiles.carbideApiConfig | nindent 4 }}
+    {{- tpl .Values.configFiles.carbideApiConfig . | nindent 4 }}
     {{- else }}
-    {{- .Files.Get "files/carbide-api-config.toml" | nindent 4 }}
+    {{- tpl (.Files.Get "files/carbide-api-config.toml") . | nindent 4 }}
     {{- end }}
   casbin-policy.csv: |
     {{- if .Values.configFiles.casbinPolicy }}
@@ -28,7 +28,7 @@ metadata:
   labels:
     {{- include "carbide-api.labels" . | nindent 4 }}
 data:
-  carbide-api-site-config.toml: {{ .Values.siteConfig.carbideApiSiteConfig | default "" | quote }}
+  carbide-api-site-config.toml: {{ tpl (.Values.siteConfig.carbideApiSiteConfig | default "") . | quote }}
 {{- end }}
 {{- if .Values.vaultClusterInfo }}
 ---

@@ -8,9 +8,9 @@ metadata:
 data:
   carbide-bmc-proxy.toml: |
     {{- if .Values.configFiles.carbideBmcProxyConfig }}
-    {{- .Values.configFiles.carbideBmcProxyConfig | nindent 4 }}
+    {{- tpl .Values.configFiles.carbideBmcProxyConfig . | nindent 4 }}
     {{- else }}
-    {{- .Files.Get "files/carbide-bmc-proxy.toml" | nindent 4 }}
+    {{- tpl (.Files.Get "files/carbide-bmc-proxy.toml") . | nindent 4 }}
     {{- end }}
 {{- if .Values.databaseConfig }}
 ---

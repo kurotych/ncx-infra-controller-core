@@ -70,6 +70,7 @@ struct ForgeVaultClientConfig {
     pub kv_mount_location: String,
     pub pki_mount_location: String,
     pub pki_role_name: String,
+    pub spiffe_trust_domain: Option<String>,
     vault_root_ca_path: String,
 }
 
@@ -648,6 +649,8 @@ struct GetCertificateHelper {
     unique_identifier: String,
     pki_mount_location: String,
     pki_role_name: String,
+    /// SPIFFE trust domain used to form URI-type SANs for this certificate
+    spiffe_trust_domain: Option<String>,
     /// Alternative requested DNS-type SANs for this certificate
     alt_names: Option<String>,
     /// Requested expiration date of this certificate
@@ -667,7 +670,7 @@ impl VaultTask<Certificate> for GetCertificateHelper {
             .vault_requests_total_counter
             .add(1, &[KeyValue::new("request_type", "get_certificate")]);
 
-        let trust_domain = "forge.local";
+        let trust_domain = self.spiffe_trust_domain.as_deref().unwrap_or("forge.local");
         let namespace = "forge-system";
 
         // spiffe://<trust_domain>/<namespace>/machine/<stable_machine_id>
@@ -737,6 +740,7 @@ impl CertificateProvider for ForgeVaultClient {
             unique_identifier: unique_identifier.to_string(),
             pki_mount_location: self.vault_client_config.pki_mount_location.clone(),
             pki_role_name: self.vault_client_config.pki_role_name.clone(),
+            spiffe_trust_domain: self.vault_client_config.spiffe_trust_domain.clone(),
             alt_names,
             ttl,
         };
@@ -889,6 +893,7 @@ pub struct VaultConfig {
     pub pki_role_name: Option<String>,
     pub token: Option<String>,
     pub vault_cacert: Option<String>,
+    pub spiffe_trust_domain: Option<String>,
 }
 
 impl VaultConfig {
@@ -932,6 +937,13 @@ impl VaultConfig {
             .clone()
             .or(env::var(VAULT_CACERT_ENV_VAR).ok())
             .context("VAULT_CACERT")
+    }
+
+    pub fn spiffe_trust_domain(&self) -> eyre::Result<String> {
+        self.spiffe_trust_domain
+            .clone()
+            .or(env::var("VAULT_SPIFFE_TRUST_DOMAIN").ok())
+            .context("VAULT_SPIFFE_TRUST_DOMAIN")
     }
 }
 
@@ -992,6 +1004,7 @@ pub fn create_vault_client(
         kv_mount_location: vault_config.kv_mount_location()?,
         pki_mount_location: vault_config.pki_mount_location()?,
         pki_role_name: vault_config.pki_role_name()?,
+        spiffe_trust_domain: vault_config.spiffe_trust_domain().ok(),
         vault_root_ca_path,
     };
 

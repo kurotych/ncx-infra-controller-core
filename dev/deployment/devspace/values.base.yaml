@@ -65,7 +65,7 @@ carbide-api:
       permissive_mode = true
 
       [auth.trust]
-      spiffe_trust_domain = "forge.local"
+      spiffe_trust_domain = "{{ .Values.global.spiffe.trustDomain }}"
       spiffe_service_base_paths = ["/forge-system/sa/", "/default/sa/"]
       spiffe_machine_base_path = "/forge-system/machine/"
       additional_issuer_cns = []
@@ -119,7 +119,7 @@ carbide-bmc-proxy:
       admin_root_cafile_path = "/etc/forge/carbide-bmc-proxy/site/admin_root_cert_pem"
 
       [auth.trust]
-      spiffe_trust_domain = "forge.local"
+      spiffe_trust_domain = "{{ .Values.global.spiffe.trustDomain }}"
       spiffe_service_base_paths = [
         "/forge-system/sa/",
         "/default/sa/",
