@@ -1,0 +1,145 @@
+# ============================================================================
+# Local dev tasks for fast iteration on carbide-api inside a running cluster.
+#
+#   cargo make --makefile Makefile-localdev.toml print-env
+#   cargo make --makefile Makefile-localdev.toml build-image
+#   cargo make --makefile Makefile-localdev.toml deploy-image
+#
+# Pipeline: cargo build (host) -> docker build (COPY binary) -> push -> patch
+# ============================================================================
+
+[config]
+# This makefile drives whole-image / cluster-level actions, not per-crate work.
+# Don't recurse into workspace members.
+default_to_workspace = false
+skip_core_tasks = true
+
+[env]
+# Override on the CLI:  DEV_REPO=registry.lab/nico cargo make ...
+DEV_REPO       = { value = "registry.lab/nico-api", condition = { env_not_set = ["DEV_REPO"] } }
+K8S_NAMESPACE  = { value = "forge-system",          condition = { env_not_set = ["K8S_NAMESPACE"] } }
+DEPLOYMENT     = { value = "carbide-api",           condition = { env_not_set = ["DEPLOYMENT"] } }
+CONTAINER      = { value = "carbide-api",           condition = { env_not_set = ["CONTAINER"] } }
+DOCKERFILE     = { value = "dev/docker/Dockerfile.carbide-api-localdev", condition = { env_not_set = ["DOCKERFILE"] } }
+RUNTIME_IMAGE  = { value = "nico-runtime-container-x86_64", condition = { env_not_set = ["RUNTIME_IMAGE"] } }
+CARGO_PACKAGE  = { value = "carbide-api",           condition = { env_not_set = ["CARGO_PACKAGE"] } }
+CARGO_BIN      = { value = "carbide-api",           condition = { env_not_set = ["CARGO_BIN"] } }
+BINARY_PATH    = { value = "target/release/carbide-api", condition = { env_not_set = ["BINARY_PATH"] } }
+
+# Computed: short git SHA -> image tag. Appends `-dirty` if the worktree has
+# uncommitted changes, so the running image's tag always reveals what shipped.
+GIT_SHA = { script = [
+  'sha=$(git rev-parse --short=8 HEAD 2>/dev/null || echo dev); if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then sha="${sha}-dirty"; fi; echo "$sha"'
+] }
+IMAGE = "${DEV_REPO}:${GIT_SHA}"
+
+# ---------------------------------------------------------------------------
+# Sanity: print resolved env / image tag.
+# ---------------------------------------------------------------------------
+[tasks.print-env]
+description = "Show the resolved image tag and target deployment."
+script_runner = "bash"
+script = '''
+cat <<EOF
+DEV_REPO       = ${DEV_REPO}
+GIT_SHA        = ${GIT_SHA}
+IMAGE          = ${IMAGE}
+K8S_NAMESPACE  = ${K8S_NAMESPACE}
+DEPLOYMENT     = ${DEPLOYMENT}
+CONTAINER      = ${CONTAINER}
+DOCKERFILE     = ${DOCKERFILE}
+RUNTIME_IMAGE  = ${RUNTIME_IMAGE}
+CARGO_PACKAGE  = ${CARGO_PACKAGE}
+CARGO_BIN      = ${CARGO_BIN}
+BINARY_PATH    = ${BINARY_PATH}
+EOF
+'''
+
+# ---------------------------------------------------------------------------
+# 1a. Compile the binary on the host (release).
+# ---------------------------------------------------------------------------
+[tasks.cargo-build]
+description = "Compile ${CARGO_BIN} in release mode on the host."
+script_runner = "bash"
+script = '''
+set -euo pipefail
+echo "==> cargo build --release --locked -p ${CARGO_PACKAGE} --bin ${CARGO_BIN}"
+cargo build --release --locked -p "${CARGO_PACKAGE}" --bin "${CARGO_BIN}"
+
+if [[ ! -x "${BINARY_PATH}" ]]; then
+  echo "ERROR: expected ${BINARY_PATH} after build, not found." >&2
+  exit 1
+fi
+
+echo "==> Built $(file -b "${BINARY_PATH}")"
+ls -lh "${BINARY_PATH}"
+'''
+
+# ---------------------------------------------------------------------------
+# 1b. Build the runtime image with the locally-built binary baked in.
+# ---------------------------------------------------------------------------
+[tasks.build-image]
+description = "Build ${IMAGE}: overlay locally-built ${BINARY_PATH} onto ${RUNTIME_IMAGE}."
+dependencies = ["cargo-build"]
+script_runner = "bash"
+script = '''
+set -euo pipefail
+
+echo "==> docker build -t ${IMAGE}  (base=${RUNTIME_IMAGE})"
+docker build \
+  --build-arg "RUNTIME_IMAGE=${RUNTIME_IMAGE}" \
+  -f "${DOCKERFILE}" \
+  -t "${IMAGE}" \
+  .
+
+docker image inspect "${IMAGE}" \
+  --format 'id={{.Id}} size={{.Size}} created={{.Created}}'
+'''
+
+# ---------------------------------------------------------------------------
+# 2. Push image and roll the Deployment to it.
+# ---------------------------------------------------------------------------
+[tasks.deploy-image]
+description = "Push ${IMAGE} to the registry and patch deploy/${DEPLOYMENT} in ${K8S_NAMESPACE}."
+dependencies = ["build-image"]
+script_runner = "bash"
+script = '''
+set -euo pipefail
+
+echo "==> docker push ${IMAGE}"
+docker push "${IMAGE}"
+
+echo "==> kubectl set image deploy/${DEPLOYMENT} ${CONTAINER}=${IMAGE} -n ${K8S_NAMESPACE}"
+kubectl -n "${K8S_NAMESPACE}" set image \
+  "deploy/${DEPLOYMENT}" \
+  "${CONTAINER}=${IMAGE}"
+
+# If the tag matches what's already deployed (e.g. re-running on the same SHA),
+# `set image` is a no-op. Force a roll by bumping a template annotation.
+CURRENT=$(kubectl -n "${K8S_NAMESPACE}" get deploy "${DEPLOYMENT}" \
+  -o jsonpath="{.spec.template.spec.containers[?(@.name=='${CONTAINER}')].image}")
+if [[ "${CURRENT}" == "${IMAGE}" ]]; then
+  echo "==> Image unchanged; forcing rollout restart."
+  kubectl -n "${K8S_NAMESPACE}" rollout restart "deploy/${DEPLOYMENT}"
+fi
+
+echo "==> Waiting for rollout"
+kubectl -n "${K8S_NAMESPACE}" rollout status "deploy/${DEPLOYMENT}" --timeout=300s
+
+echo "==> Running image:"
+kubectl -n "${K8S_NAMESPACE}" get pod \
+  -l "app.kubernetes.io/name=${DEPLOYMENT}" \
+  -o jsonpath="{.items[*].status.containerStatuses[?(@.name=='${CONTAINER}')].image}{'\\n'}"
+'''
+
+# ---------------------------------------------------------------------------
+# Aliases / default
+# ---------------------------------------------------------------------------
+[tasks.build]
+alias = "build-image"
+
+[tasks.deploy]
+alias = "deploy-image"
+
+[tasks.default]
+alias = "print-env"

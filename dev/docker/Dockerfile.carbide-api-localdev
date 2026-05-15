@@ -1,0 +1,16 @@
+# Fast dev image: drops a locally-built carbide-api binary on top of the
+# existing runtime image. No in-Docker cargo build.
+#
+# Build arg RUNTIME_IMAGE selects the base. Default mirrors the SA build's
+# nico-runtime-container-x86_64.
+ARG RUNTIME_IMAGE=nico-runtime-container-x86_64
+FROM ${RUNTIME_IMAGE}
+
+# Path inside the image where the chart's command: exec's the binary.
+ARG DEST=/opt/carbide/carbide-api
+
+# COPY src is relative to the build context root (the repo root).
+# target/release/carbide-api must exist BEFORE `docker build` runs.
+COPY target/release/carbide-api ${DEST}
+
+RUN chmod 0755 ${DEST}
