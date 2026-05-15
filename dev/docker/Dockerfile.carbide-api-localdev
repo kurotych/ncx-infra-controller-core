@@ -1,16 +1,51 @@
-# Fast dev image: drops a locally-built carbide-api binary on top of the
-# existing runtime image. No in-Docker cargo build.
+# Fast dev image for carbide-api.
 #
-# Build arg RUNTIME_IMAGE selects the base. Default mirrors the SA build's
-# nico-runtime-container-x86_64.
+# Stage 1: compile a single binary inside the existing build container so the
+#          output matches the cluster's libc / arch exactly.
+# Stage 2: drop that binary onto the existing runtime image.
+#
+# Build args:
+#   BUILD_IMAGE    - builder base (default: nico-buildcontainer-x86_64)
+#   RUNTIME_IMAGE  - runtime base (default: nico-runtime-container-x86_64)
+#   CARGO_PACKAGE  - cargo package to build (default: carbide-api)
+#   CARGO_BIN      - bin within that package (default: carbide-api)
+#   DEST           - path inside the runtime image (default: /opt/carbide/carbide-api)
+
+ARG BUILD_IMAGE=nico-buildcontainer-x86_64
 ARG RUNTIME_IMAGE=nico-runtime-container-x86_64
+
+# ---------------------------------------------------------------------------
+# Stage 1: builder
+# ---------------------------------------------------------------------------
+FROM ${BUILD_IMAGE} AS builder
+
+ARG CARGO_PACKAGE=carbide-api
+ARG CARGO_BIN=carbide-api
+
+WORKDIR /workspace
+COPY . /workspace
+
+# Build exactly one binary in release mode.  BuildKit caches /workspace/target
+# and the cargo registry/git caches across runs, so repeat builds are fast.
+RUN --mount=type=cache,id=carbide-localdev-target,target=/workspace/target,sharing=locked \
+    --mount=type=cache,id=carbide-localdev-cargo-registry,target=/root/.cargo/registry,sharing=locked \
+    --mount=type=cache,id=carbide-localdev-cargo-git,target=/root/.cargo/git,sharing=locked \
+    set -eux; \
+    cargo build --release --locked \
+        -p "${CARGO_PACKAGE}" \
+        --bin "${CARGO_BIN}"; \
+    # Cache mounts disappear from the layer; copy the binary into the image fs
+    # so stage 2 can pick it up via `--from=builder`.
+    install -d /out; \
+    install -m 0755 "/workspace/target/release/${CARGO_BIN}" "/out/${CARGO_BIN}"
+
+# ---------------------------------------------------------------------------
+# Stage 2: runtime
+# ---------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE}
 
-# Path inside the image where the chart's command: exec's the binary.
+ARG CARGO_BIN=carbide-api
 ARG DEST=/opt/carbide/carbide-api
 
-# COPY src is relative to the build context root (the repo root).
-# target/release/carbide-api must exist BEFORE `docker build` runs.
-COPY target/release/carbide-api ${DEST}
-
+COPY --from=builder /out/${CARGO_BIN} ${DEST}
 RUN chmod 0755 ${DEST}

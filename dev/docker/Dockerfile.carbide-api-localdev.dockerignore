@@ -1,8 +1,0 @@
-# Per-Dockerfile ignore for Dockerfile.carbide-api-localdev.
-#
-# This image only needs the locally-built binary copied in.
-# Inverse-ignore everything except that one file so the build context
-# stays tiny and the repo-wide .dockerignore (which excludes target/)
-# doesn't matter here.
-*
-!target/release/carbide-api

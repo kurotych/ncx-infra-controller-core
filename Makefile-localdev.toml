@@ -5,7 +5,8 @@
 #   cargo make --makefile Makefile-localdev.toml build-image
 #   cargo make --makefile Makefile-localdev.toml deploy-image
 #
-# Pipeline: cargo build (host) -> docker build (COPY binary) -> push -> patch
+# Pipeline: docker build (compile inside ${BUILD_IMAGE} + COPY into
+#           ${RUNTIME_IMAGE}) -> push -> kubectl patch
 # ============================================================================
 
 [config]
@@ -21,10 +22,10 @@ K8S_NAMESPACE  = { value = "forge-system",          condition = { env_not_set = 
 DEPLOYMENT     = { value = "carbide-api",           condition = { env_not_set = ["DEPLOYMENT"] } }
 CONTAINER      = { value = "carbide-api",           condition = { env_not_set = ["CONTAINER"] } }
 DOCKERFILE     = { value = "dev/docker/Dockerfile.carbide-api-localdev", condition = { env_not_set = ["DOCKERFILE"] } }
+BUILD_IMAGE    = { value = "nico-buildcontainer-x86_64",    condition = { env_not_set = ["BUILD_IMAGE"] } }
 RUNTIME_IMAGE  = { value = "nico-runtime-container-x86_64", condition = { env_not_set = ["RUNTIME_IMAGE"] } }
 CARGO_PACKAGE  = { value = "carbide-api",           condition = { env_not_set = ["CARGO_PACKAGE"] } }
 CARGO_BIN      = { value = "carbide-api",           condition = { env_not_set = ["CARGO_BIN"] } }
-BINARY_PATH    = { value = "target/release/carbide-api", condition = { env_not_set = ["BINARY_PATH"] } }
 
 # Computed: short git SHA -> image tag. Appends `-dirty` if the worktree has
 # uncommitted changes, so the running image's tag always reveals what shipped.
@@ -48,46 +49,29 @@ K8S_NAMESPACE  = ${K8S_NAMESPACE}
 DEPLOYMENT     = ${DEPLOYMENT}
 CONTAINER      = ${CONTAINER}
 DOCKERFILE     = ${DOCKERFILE}
+BUILD_IMAGE    = ${BUILD_IMAGE}
 RUNTIME_IMAGE  = ${RUNTIME_IMAGE}
 CARGO_PACKAGE  = ${CARGO_PACKAGE}
 CARGO_BIN      = ${CARGO_BIN}
-BINARY_PATH    = ${BINARY_PATH}
 EOF
 '''
 
 # ---------------------------------------------------------------------------
-# 1a. Compile the binary on the host (release).
-# ---------------------------------------------------------------------------
-[tasks.cargo-build]
-description = "Compile ${CARGO_BIN} in release mode on the host."
-script_runner = "bash"
-script = '''
-set -euo pipefail
-echo "==> cargo build --release --locked -p ${CARGO_PACKAGE} --bin ${CARGO_BIN}"
-cargo build --release --locked -p "${CARGO_PACKAGE}" --bin "${CARGO_BIN}"
-
-if [[ ! -x "${BINARY_PATH}" ]]; then
-  echo "ERROR: expected ${BINARY_PATH} after build, not found." >&2
-  exit 1
-fi
-
-echo "==> Built $(file -b "${BINARY_PATH}")"
-ls -lh "${BINARY_PATH}"
-'''
-
-# ---------------------------------------------------------------------------
-# 1b. Build the runtime image with the locally-built binary baked in.
+# 1. Build the image: compile inside ${BUILD_IMAGE}, drop the binary
+#    into ${RUNTIME_IMAGE}. Only one binary is compiled.
 # ---------------------------------------------------------------------------
 [tasks.build-image]
-description = "Build ${IMAGE}: overlay locally-built ${BINARY_PATH} onto ${RUNTIME_IMAGE}."
-dependencies = ["cargo-build"]
+description = "Build ${IMAGE}: compile ${CARGO_BIN} in ${BUILD_IMAGE}, overlay onto ${RUNTIME_IMAGE}."
 script_runner = "bash"
 script = '''
 set -euo pipefail
 
-echo "==> docker build -t ${IMAGE}  (base=${RUNTIME_IMAGE})"
-docker build \
+echo "==> docker build -t ${IMAGE}  (builder=${BUILD_IMAGE}, runtime=${RUNTIME_IMAGE})"
+DOCKER_BUILDKIT=1 docker build \
+  --build-arg "BUILD_IMAGE=${BUILD_IMAGE}" \
   --build-arg "RUNTIME_IMAGE=${RUNTIME_IMAGE}" \
+  --build-arg "CARGO_PACKAGE=${CARGO_PACKAGE}" \
+  --build-arg "CARGO_BIN=${CARGO_BIN}" \
   -f "${DOCKERFILE}" \
   -t "${IMAGE}" \
   .
