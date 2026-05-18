@@ -35,6 +35,7 @@ pub enum HwType {
     Bluefield,
     Dell,
     Gb200,
+    GigaComputingAmi,
     Hpe,
     Lenovo,
     LenovoAmi,
@@ -48,7 +49,7 @@ pub enum HwType {
 impl HwType {
     pub const fn bmc_vendor(&self) -> Option<bmc_vendor::BMCVendor> {
         match self {
-            Self::Ami => None,
+            Self::Ami | Self::GigaComputingAmi => None,
             Self::Bluefield => Some(bmc_vendor::BMCVendor::Nvidia),
             Self::Dell => Some(bmc_vendor::BMCVendor::Dell),
             Self::Gb200 => Some(bmc_vendor::BMCVendor::Nvidia),
@@ -73,6 +74,7 @@ impl HwType {
             Self::Lenovo => Some(BiosAttr::new_str("BootModes_InfiniteBootRetry", "Enabled")),
             Self::LenovoAmi => Some(BiosAttr::new_str("EndlessBoot", "Enabled")),
             Self::LenovoGb300 => Some(BiosAttr::new_int("LEM0003", 50)),
+            Self::GigaComputingAmi => None,
             Self::LiteonPowerShelf => None,
             Self::NvSwitch => None,
             Self::Supermicro => None,

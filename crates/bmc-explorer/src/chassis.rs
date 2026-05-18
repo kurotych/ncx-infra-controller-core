@@ -120,6 +120,12 @@ impl<B: Bmc> ExploredChassisCollection<B> {
             .any(|m| m.chassis.hardware_id().manufacturer == Some(Manufacturer::new("Lenovo")))
     }
 
+    pub fn is_giga_computing(&self) -> bool {
+        self.members.iter().any(|m| {
+            m.chassis.hardware_id().manufacturer == Some(Manufacturer::new("Giga Computing"))
+        })
+    }
+
     pub fn is_bluefield2(&self) -> bool {
         self.members
             .iter()

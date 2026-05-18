@@ -135,7 +135,7 @@ pub async fn nv_generate_exploration_report<B: Bmc>(
     let hw_type = hw_type(&root, &explored_system, &explored_chassis);
     let manager_explore_config = hw_type
         .map(|hw_type| match hw_type {
-            hw::HwType::Ami => manager::Config {
+            hw::HwType::Ami | hw::HwType::GigaComputingAmi => manager::Config {
                 need_host_interfaces: true,
                 ..Default::default()
             },
@@ -173,6 +173,7 @@ pub async fn nv_generate_exploration_report<B: Bmc>(
             Some(
                 hw::HwType::Ami
                 | hw::HwType::Dell
+                | hw::HwType::GigaComputingAmi
                 | hw::HwType::Hpe
                 | hw::HwType::Lenovo
                 | hw::HwType::Supermicro,
@@ -267,6 +268,7 @@ pub(crate) fn hw_type<B: Bmc>(
             "AMI" if explored_chassis.is_gb300() && explored_chassis.is_lenovo() => {
                 Some(hw::HwType::LenovoGb300)
             }
+            "AMI" if explored_chassis.is_giga_computing() => Some(hw::HwType::GigaComputingAmi),
             "AMI" => Some(hw::HwType::Ami),
             "Dell" => Some(hw::HwType::Dell),
             "Lenovo" if oem_id == Some("Ami") => Some(hw::HwType::LenovoAmi),
@@ -342,6 +344,22 @@ fn lockdown_status<B: Bmc>(
                 _ => Ok(InternalLockdownStatus::Partial),
             }
             .map(|status| Some(LockdownStatus { status, message }))
+        }
+
+        hw::HwType::GigaComputingAmi => {
+            let hi_enabled = explored_manager
+                .host_interfaces
+                .as_ref()
+                .ok_or_else(Error::bmc_not_provided("host interfaces"))?
+                .iter()
+                .any(|i| i.interface_enabled().is_none_or(identity));
+            let message = format!("host_interfaces: {hi_enabled}");
+            let status = if hi_enabled {
+                InternalLockdownStatus::Disabled
+            } else {
+                InternalLockdownStatus::Enabled
+            };
+            Ok(Some(LockdownStatus { status, message }))
         }
 
         hw::HwType::Dell => {
@@ -586,6 +604,7 @@ fn machine_setup_status<B: Bmc>(
     match hw_type {
         hw::HwType::LiteonPowerShelf => (),
         hw::HwType::NvSwitch => (),
+        hw::HwType::GigaComputingAmi => (),
         hw::HwType::Viking => {
             diffs.extend(
                 hw::viking::EXPECTED_BIOS_ATTRS
