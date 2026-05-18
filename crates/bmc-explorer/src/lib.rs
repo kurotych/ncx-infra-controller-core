@@ -347,17 +347,24 @@ fn lockdown_status<B: Bmc>(
         }
 
         hw::HwType::GigaComputingAmi => {
+            let bios = bios.as_ref().ok_or_else(Error::bmc_not_provided("bios"))?;
+            let usb_mass_storage = bios.attribute("USB00F");
+            let usb_mass_storage = usb_mass_storage
+                .as_ref()
+                .and_then(|v| v.str_value())
+                .ok_or_else(Error::bmc_not_provided("BIOS USB00F"))?;
             let hi_enabled = explored_manager
                 .host_interfaces
                 .as_ref()
                 .ok_or_else(Error::bmc_not_provided("host interfaces"))?
                 .iter()
                 .any(|i| i.interface_enabled().is_none_or(identity));
-            let message = format!("host_interfaces: {hi_enabled}");
-            let status = if hi_enabled {
-                InternalLockdownStatus::Disabled
-            } else {
-                InternalLockdownStatus::Enabled
+            let message =
+                format!("usb_mass_storage: {usb_mass_storage}; host_interfaces: {hi_enabled}");
+            let status = match (usb_mass_storage, hi_enabled) {
+                ("Disabled", false) => InternalLockdownStatus::Enabled,
+                ("Enabled", true) => InternalLockdownStatus::Disabled,
+                _ => InternalLockdownStatus::Partial,
             };
             Ok(Some(LockdownStatus { status, message }))
         }
