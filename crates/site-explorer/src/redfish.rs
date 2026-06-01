@@ -1271,20 +1271,17 @@ pub(crate) fn map_redfish_client_creation_error(
 }
 
 /// Returns `true` when a 403 `response_body` is the GigaComputing AMI
-/// Lighttpd error envelope: a serialized `EndpointExplorationError` whose
-/// nested `ResponseBody` is the server's XML 403 page (not a Redfish JSON
-/// error). Such 403s are server-level blocks, not credentials failures.
+/// server-level (Lighttpd) XHTML 403 page rather than a Redfish JSON error.
+/// Such 403s are server-side blocks, not credentials failures, so they must
+/// not be treated as `Unauthorized` (which would trip `AvoidLockout`).
+///
+/// Both Redfish clients hand us the *raw* HTTP body here (libredfish at
+/// `network.rs` HTTPErrorCode, nv-redfish at `reqwest.rs` `InvalidResponse`),
+/// which for these BMCs is the literal XHTML document, e.g.
+/// `<?xml ...><html>...403 Forbidden...</html>`.
 fn is_gigacomputing_lighttpd_forbidden(response_body: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(response_body)
-        .ok()
-        .and_then(|v| {
-            let is_unauthorized = v.get("Type")?.as_str()? == "Unauthorized";
-            let is_403 = v.get("ResponseCode")?.as_u64()? == 403;
-            let inner = v.get("ResponseBody")?.as_str()?;
-            let is_xml = inner.trim_start().to_ascii_lowercase().starts_with("<?xml");
-            Some(is_unauthorized && is_403 && is_xml)
-        })
-        .unwrap_or(false)
+    let body = response_body.trim_start().to_ascii_lowercase();
+    body.starts_with("<?xml") && body.contains("403 forbidden")
 }
 
 pub(crate) fn map_redfish_error(error: RedfishError) -> EndpointExplorationError {
@@ -1339,6 +1336,12 @@ pub(crate) fn map_redfish_error(error: RedfishError) -> EndpointExplorationError
             || *status_code == http::StatusCode::FORBIDDEN =>
         {
             let code_str = status_code.as_str();
+            tracing::info!(
+                %url,
+                %status_code,
+                response_body = %response_body,
+                "Mapping libredfish {status_code} to Unauthorized; raw response body logged for diagnosis"
+            );
             EndpointExplorationError::Unauthorized {
                 details: format!("HTTP {status_code} {code_str} at {url}"),
                 response_body: Some(response_body.clone()),
@@ -1449,6 +1452,13 @@ fn map_nv_redfish_explore_error(
                             }
                         }
                         http::StatusCode::UNAUTHORIZED | http::StatusCode::FORBIDDEN => {
+                            tracing::info!(
+                                %url,
+                                %status,
+                                %context,
+                                response_body = %text,
+                                "Mapping nv-redfish {status} to Unauthorized; raw response body logged for diagnosis"
+                            );
                             EndpointExplorationError::Unauthorized {
                                 details: format!(
                                     "HTTP {status} {} at {context} ({url})",
@@ -1508,22 +1518,22 @@ mod tests {
     use libredfish::RedfishError;
     use model::site_explorer::EndpointExplorationError;
 
-    /// The 403 envelope a GigaComputing AMI BMC ultimately produces: the
-    /// captured `response_body` is itself a serialized `EndpointExplorationError`
-    /// whose nested `ResponseBody` is the Lighttpd XML 403 page.
-    const GIGACOMPUTING_LIGHT_HTTPD_403_ENVELOPE: &str = r#"{
-    "Type": "Unauthorized",
-    "Details": "HTTP 403 Forbidden 403 at https://10.113.5.180:443/redfish/v1/",
-    "ResponseBody": "<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"\n         \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">\n <head>\n  <title>403 Forbidden</title>\n </head>\n <body>\n  <h1>403 Forbidden</h1>\n </body>\n</html>\n",
-    "ResponseCode": 403
-}"#;
+    /// The raw HTTP body a GigaComputing AMI BMC returns for a server-level
+    /// (Lighttpd) 403: an XHTML document, not a Redfish JSON error. This is the
+    /// exact `response_body` both Redfish clients hand to the error mappers.
+    const GIGACOMPUTING_LIGHTTPD_403_BODY: &str = "<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>\n\
+<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"\n\
+         \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n\
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">\n\
+ <head>\n  <title>403 Forbidden</title>\n </head>\n\
+ <body>\n  <h1>403 Forbidden</h1>\n </body>\n</html>\n";
 
     #[test]
-    fn nested_xml_403_envelope_maps_to_gigacomputing_lighttpd_forbidden() {
+    fn raw_xml_403_maps_to_gigacomputing_lighttpd_forbidden() {
         let err = RedfishError::HTTPErrorCode {
             url: "https://10.213.2.180:443/redfish/v1/".to_string(),
             status_code: http::StatusCode::FORBIDDEN,
-            response_body: GIGACOMPUTING_LIGHT_HTTPD_403_ENVELOPE.to_string(),
+            response_body: GIGACOMPUTING_LIGHTTPD_403_BODY.to_string(),
         };
 
         let result = map_redfish_error(err);
@@ -1545,7 +1555,7 @@ mod tests {
     }
 
     #[test]
-    fn nv_redfish_xml_403_envelope_maps_to_gigacomputing_lighttpd_forbidden() {
+    fn nv_redfish_raw_xml_403_maps_to_gigacomputing_lighttpd_forbidden() {
         use carbide_redfish::nv_redfish::{BmcError, Error};
 
         let err = bmc_explorer::Error::NvRedfish {
@@ -1553,7 +1563,7 @@ mod tests {
             err: Error::Bmc(BmcError::InvalidResponse {
                 url: "https://10.213.2.180:443/redfish/v1/".parse().unwrap(),
                 status: http::StatusCode::FORBIDDEN,
-                text: GIGACOMPUTING_LIGHT_HTTPD_403_ENVELOPE.to_string(),
+                text: GIGACOMPUTING_LIGHTTPD_403_BODY.to_string(),
             }),
         };
 
