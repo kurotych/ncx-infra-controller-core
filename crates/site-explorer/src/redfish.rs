@@ -1270,6 +1270,23 @@ pub(crate) fn map_redfish_client_creation_error(
     }
 }
 
+/// Returns `true` when a 403 `response_body` is the GigaComputing AMI
+/// Lighttpd error envelope: a serialized `EndpointExplorationError` whose
+/// nested `ResponseBody` is the server's XML 403 page (not a Redfish JSON
+/// error). Such 403s are server-level blocks, not credentials failures.
+fn is_gigacomputing_lighttpd_forbidden(response_body: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(response_body)
+        .ok()
+        .and_then(|v| {
+            let is_unauthorized = v.get("Type")?.as_str()? == "Unauthorized";
+            let is_403 = v.get("ResponseCode")?.as_u64()? == 403;
+            let inner = v.get("ResponseBody")?.as_str()?;
+            let is_xml = inner.trim_start().to_ascii_lowercase().starts_with("<?xml");
+            Some(is_unauthorized && is_403 && is_xml)
+        })
+        .unwrap_or(false)
+}
+
 pub(crate) fn map_redfish_error(error: RedfishError) -> EndpointExplorationError {
     match &error {
         RedfishError::NetworkError { url, source } => {
@@ -1292,6 +1309,23 @@ pub(crate) fn map_redfish_error(error: RedfishError) -> EndpointExplorationError
             EndpointExplorationError::VikingFWInventoryForbiddenError {
                 details: format!(
                     "HTTP {status_code} at {url} - this is a known, intermittent issue for Vikings."
+                ),
+                response_body: Some(response_body.clone()),
+                response_code: Some(status_code.as_u16()),
+            }
+        }
+        RedfishError::HTTPErrorCode {
+            status_code,
+            response_body,
+            url,
+        } if *status_code == http::StatusCode::FORBIDDEN
+            && is_gigacomputing_lighttpd_forbidden(response_body) =>
+        {
+            tracing::info!("It is gigacomputing Lighttpd forbidden error");
+            EndpointExplorationError::GigaComputingLighttpdForbiddenError {
+                details: format!(
+                    "HTTP {status_code} at {url} — server-level (Lighttpd) forbidden \
+                     with an XML body, not a credentials failure"
                 ),
                 response_body: Some(response_body.clone()),
                 response_code: Some(status_code.as_u16()),
@@ -1457,7 +1491,45 @@ mod tests {
     use forge_secrets::credentials::Credentials;
     use libredfish::model::service_root::RedfishVendor;
 
-    use super::RedfishClient;
+    use super::{RedfishClient, map_redfish_error};
+    use libredfish::RedfishError;
+    use model::site_explorer::EndpointExplorationError;
+
+    /// The 403 envelope a GigaComputing AMI BMC ultimately produces: the
+    /// captured `response_body` is itself a serialized `EndpointExplorationError`
+    /// whose nested `ResponseBody` is the Lighttpd XML 403 page.
+    const GIGACOMPUTING_LIGHT_HTTPD_403_ENVELOPE: &str = r#"{
+    "Type": "Unauthorized",
+    "Details": "HTTP 403 Forbidden 403 at https://10.113.5.180:443/redfish/v1/",
+    "ResponseBody": "<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"\n         \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">\n <head>\n  <title>403 Forbidden</title>\n </head>\n <body>\n  <h1>403 Forbidden</h1>\n </body>\n</html>\n",
+    "ResponseCode": 403
+}"#;
+
+    #[test]
+    fn nested_xml_403_envelope_maps_to_gigacomputing_lighttpd_forbidden() {
+        let err = RedfishError::HTTPErrorCode {
+            url: "https://10.213.2.180:443/redfish/v1/".to_string(),
+            status_code: http::StatusCode::FORBIDDEN,
+            response_body: GIGACOMPUTING_LIGHT_HTTPD_403_ENVELOPE.to_string(),
+        };
+
+        let result = map_redfish_error(err);
+
+        assert!(
+            matches!(
+                result,
+                EndpointExplorationError::GigaComputingLighttpdForbiddenError {
+                    response_code: Some(403),
+                    ..
+                }
+            ),
+            "expected GigaComputingLighttpdForbiddenError, got: {result:?}"
+        );
+        assert!(
+            !result.is_unauthorized(),
+            "Lighttpd 403 must not be treated as unauthorized (would trip AvoidLockout)"
+        );
+    }
 
     fn test_addr() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 443)

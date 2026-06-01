@@ -1127,6 +1127,18 @@ pub enum EndpointExplorationError {
         response_code: Option<u16>,
     },
 
+    /// A GigaComputing AMI BMC returned a server-level (Lighttpd) 403 with an
+    /// XML body rather than a Redfish JSON error. This is an access/server-side
+    /// block, NOT a credentials failure, so it must not be treated as
+    /// `Unauthorized` (which would trip `AvoidLockout` and stop retries).
+    #[error("GigaComputingLighttpdForbiddenError: {details}")]
+    #[serde(rename_all = "PascalCase")]
+    GigaComputingLighttpdForbiddenError {
+        details: String,
+        response_body: Option<String>,
+        response_code: Option<u16>,
+    },
+
     #[error("Invalid Redfish response for DPU BIOS: {details}")]
     #[serde(rename_all = "PascalCase")]
     InvalidDpuRedfishBiosResponse {

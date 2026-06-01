@@ -727,6 +727,9 @@ pub fn exploration_error_to_metric_label(error: &EndpointExplorationError) -> St
         EndpointExplorationError::VikingFWInventoryForbiddenError { .. } => {
             "viking_fw_inventory_forbidden"
         }
+        EndpointExplorationError::GigaComputingLighttpdForbiddenError { .. } => {
+            "gigacomputing_lighttpd_forbidden"
+        }
         EndpointExplorationError::InvalidDpuRedfishBiosResponse { .. } => {
             "invalid_dpu_redfish_bios_response"
         }
