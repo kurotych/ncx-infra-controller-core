@@ -1435,6 +1435,19 @@ fn map_nv_redfish_explore_error(
                                 response_code: Some(status.as_u16()),
                             }
                         }
+                        http::StatusCode::FORBIDDEN
+                            if is_gigacomputing_lighttpd_forbidden(&text) =>
+                        {
+                            tracing::info!("It is gigacomputing Lighttpd forbidden error");
+                            EndpointExplorationError::GigaComputingLighttpdForbiddenError {
+                                details: format!(
+                                    "HTTP {status} at {context} ({url}) — server-level (Lighttpd) \
+                                     forbidden with an XML body, not a credentials failure"
+                                ),
+                                response_body: Some(text),
+                                response_code: Some(status.as_u16()),
+                            }
+                        }
                         http::StatusCode::UNAUTHORIZED | http::StatusCode::FORBIDDEN => {
                             EndpointExplorationError::Unauthorized {
                                 details: format!(
@@ -1491,7 +1504,7 @@ mod tests {
     use forge_secrets::credentials::Credentials;
     use libredfish::model::service_root::RedfishVendor;
 
-    use super::{RedfishClient, map_redfish_error};
+    use super::{RedfishClient, map_nv_redfish_explore_error, map_redfish_error};
     use libredfish::RedfishError;
     use model::site_explorer::EndpointExplorationError;
 
@@ -1514,6 +1527,37 @@ mod tests {
         };
 
         let result = map_redfish_error(err);
+
+        assert!(
+            matches!(
+                result,
+                EndpointExplorationError::GigaComputingLighttpdForbiddenError {
+                    response_code: Some(403),
+                    ..
+                }
+            ),
+            "expected GigaComputingLighttpdForbiddenError, got: {result:?}"
+        );
+        assert!(
+            !result.is_unauthorized(),
+            "Lighttpd 403 must not be treated as unauthorized (would trip AvoidLockout)"
+        );
+    }
+
+    #[test]
+    fn nv_redfish_xml_403_envelope_maps_to_gigacomputing_lighttpd_forbidden() {
+        use carbide_redfish::nv_redfish::{BmcError, Error};
+
+        let err = bmc_explorer::Error::NvRedfish {
+            context: "service root",
+            err: Error::Bmc(BmcError::InvalidResponse {
+                url: "https://10.213.2.180:443/redfish/v1/".parse().unwrap(),
+                status: http::StatusCode::FORBIDDEN,
+                text: GIGACOMPUTING_LIGHT_HTTPD_403_ENVELOPE.to_string(),
+            }),
+        };
+
+        let result = map_nv_redfish_explore_error(err);
 
         assert!(
             matches!(
