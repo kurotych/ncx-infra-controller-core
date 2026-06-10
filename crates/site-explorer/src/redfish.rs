@@ -256,7 +256,7 @@ impl RedfishClient {
                     .map_err(|err| redact_password(err, curr_password.as_str()))
                     .map_err(map_redfish_error)?;
             }
-            RedfishVendor::Unknown => {
+            RedfishVendor::Unknown | RedfishVendor::GigaComputingAMI => {
                 return Err(EndpointExplorationError::UnsupportedVendor {
                     vendor: vendor.to_string(),
                 });

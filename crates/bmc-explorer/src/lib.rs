@@ -180,6 +180,7 @@ pub async fn nv_generate_exploration_report<B: Bmc>(
             // When needed Chassis Id is equal to System Id.
             Some(
                 hw::HwType::Ami
+                | hw::HwType::GigaComputingAmi
                 | hw::HwType::Dell
                 | hw::HwType::Hpe
                 | hw::HwType::Lenovo
@@ -299,6 +300,7 @@ pub(crate) fn hw_type<B: Bmc>(
         .or_else(|| (oem_id == Some("Supermicro")).then_some("Supermicro"))
         .and_then(|vendor_id| match vendor_id {
             "AMI" if system.id().into_inner() == "DGX" => Some(hw::HwType::Viking),
+            "AMI" if explored_chassis.is_giga_computing() => Some(hw::HwType::GigaComputingAmi),
             "AMI" => Some(hw::HwType::Ami),
             "Dell" => Some(hw::HwType::Dell),
             "Lenovo" if oem_id == Some("Ami") => Some(hw::HwType::LenovoAmi),
@@ -618,6 +620,7 @@ fn machine_setup_status<B: Bmc>(
     match hw_type {
         hw::HwType::LiteonPowerShelf => (),
         hw::HwType::NvSwitch => (),
+        hw::HwType::GigaComputingAmi => (),
         hw::HwType::Viking => {
             diffs.extend(
                 hw::viking::EXPECTED_BIOS_ATTRS

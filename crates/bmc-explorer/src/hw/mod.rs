@@ -39,6 +39,7 @@ pub enum HwType {
     Hpe,
     Lenovo,
     LenovoAmi,
+    GigaComputingAmi,
     LenovoGb300,
     SupermicroGb300,
     Supermicro,
@@ -50,7 +51,7 @@ pub enum HwType {
 impl HwType {
     pub const fn bmc_vendor(&self) -> Option<bmc_vendor::BMCVendor> {
         match self {
-            Self::Ami => None,
+            Self::Ami | Self::GigaComputingAmi => None,
             Self::Bluefield => Some(bmc_vendor::BMCVendor::Nvidia),
             Self::Dell => Some(bmc_vendor::BMCVendor::Dell),
             Self::Gb200 => Some(bmc_vendor::BMCVendor::Nvidia),
@@ -72,6 +73,7 @@ impl HwType {
     pub const fn infinite_boot_enabled_attr(&self) -> Option<BiosAttr<'static>> {
         match self {
             Self::Ami => Some(BiosAttr::new_str("EndlessBoot", "Enabled")),
+            Self::GigaComputingAmi => None,
             Self::Bluefield => None,
             Self::Dell => Some(BiosAttr::new_str("BootSeqRetry", "Enabled")),
             Self::Gb200 => Some(BiosAttr::new_str("EmbeddedUefiShell", "Disabled")),
