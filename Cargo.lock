@@ -6543,11 +6543,12 @@ dependencies = [
 [[package]]
 name = "libredfish"
 version = "0.0.0"
-source = "git+https://github.com/kurotych/libredfish.git?branch=gigapatch#11c347ce179acc5d4fb11f3670169ea9dbd30999"
+source = "git+https://github.com/kurotych/libredfish.git?branch=gigapatch-v2#820dab8c8ed06d313a6952ec82ddc117eb6237f0"
 dependencies = [
  "chrono",
  "clap",
  "log",
+ "mac_address",
  "regex",
  "reqwest 0.12.28",
  "serde",
