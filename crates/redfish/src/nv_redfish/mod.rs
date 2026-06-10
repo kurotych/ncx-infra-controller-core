@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use carbide_utils::HostPortPair;
@@ -25,6 +26,7 @@ use forge_secrets::credentials::Credentials;
 pub use nv_redfish::bmc_http::reqwest::BmcError;
 use nv_redfish::bmc_http::reqwest::{
     Client as RedfishReqwestClient, ClientParams as RedfishReqwestClientParams,
+    RetryPolicy as RedfishRetryPolicy,
 };
 use nv_redfish::bmc_http::{BmcCredentials, CacheSettings, HttpBmc};
 use nv_redfish::oem::hpe::ilo_service_ext::ManagerType as HpeManagerType;
@@ -170,8 +172,27 @@ impl NvRedfishClientPool {
             );
         }
 
+        // Giga Computing (AMI) BMCs sporadically respond with 403 Forbidden
+        // to authorized GET requests during exploration. These responses come
+        // from the lighttpd frontend (Server: lighttpd) rather than the
+        // Redfish service itself. Retry such responses a few times with a
+        // backoff before giving up.
+        let retry_policy = RedfishRetryPolicy::new(|request, response| {
+            *request.method() == http::Method::GET
+                && response.status() == reqwest::StatusCode::FORBIDDEN
+                && response
+                    .headers()
+                    .get(reqwest::header::SERVER)
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|v| v.eq_ignore_ascii_case("lighttpd"))
+        })
+        .max_retries(3)
+        .delay(Duration::from_secs(8));
+
         let client = RedfishReqwestClient::with_params(
-            RedfishReqwestClientParams::new().accept_invalid_certs(true),
+            RedfishReqwestClientParams::new()
+                .accept_invalid_certs(true)
+                .retry(retry_policy),
         )
         .map_err(|err| Error::Bmc(err.into()))?;
         Ok(Arc::new(RedfishBmc::with_custom_headers(
