@@ -6543,12 +6543,11 @@ dependencies = [
 [[package]]
 name = "libredfish"
 version = "0.0.0"
-source = "git+https://github.com/NVIDIA/libredfish.git?tag=v0.44.10#3c5bd928414892355e0dd3ce4fd5120c31477857"
+source = "git+https://github.com/kurotych/libredfish.git?branch=gigapatch#11c347ce179acc5d4fb11f3670169ea9dbd30999"
 dependencies = [
  "chrono",
  "clap",
  "log",
- "mac_address",
  "regex",
  "reqwest 0.12.28",
  "serde",
@@ -7436,9 +7435,8 @@ dependencies = [
 
 [[package]]
 name = "nv-redfish"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06c0a56718c0605b550a9957d90bcf824edd52093f09e32e6c6b5087dd86de7f"
+version = "0.1.0"
+source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -7453,9 +7451,8 @@ dependencies = [
 
 [[package]]
 name = "nv-redfish-bmc-http"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6dd788740d6111263b57d44dd3b4f59f5201f81e5383cd6784a977cdefe2196"
+version = "0.1.0"
+source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -7469,6 +7466,7 @@ dependencies = [
  "serde_path_to_error",
  "sse-stream",
  "time",
+ "tokio",
  "tokio-util",
  "url",
  "uuid",
@@ -7476,9 +7474,8 @@ dependencies = [
 
 [[package]]
 name = "nv-redfish-core"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f897d4e715aac6857673a344d05aea380d8d87cbf5eba876c9768664ecc8cba1"
+version = "0.1.0"
+source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
 dependencies = [
  "futures-core",
  "futures-io",
@@ -7491,9 +7488,8 @@ dependencies = [
 
 [[package]]
 name = "nv-redfish-csdl-compiler"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "264eb8b256664d1d2b953d2bfc26648f8c3986d0540dc4eaa2e666f2f16de567"
+version = "0.1.0"
+source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
 dependencies = [
  "clap",
  "clap_derive",
@@ -7509,9 +7505,8 @@ dependencies = [
 
 [[package]]
 name = "nv-redfish-schema"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7049c7e09b59afe558b46d6c35323a3b29e9cc32daeede4eb5a7a2ca47ff4a3"
+version = "0.1.0"
+source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
 dependencies = [
  "glob",
 ]
