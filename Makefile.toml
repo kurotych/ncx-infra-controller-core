@@ -30,7 +30,9 @@ FORGE_CA_PATH = { value = "${REPO_ROOT}/dev/forge_${FORGE_CA}root.pem" }
 
 # Temporary: increase Rust test thread stack to avoid stack overflows in tests.
 # TODO: remove after stack-heavy tests/code paths are refactored.
-RUST_MIN_STACK = { value = "8388608", condition = { env_not_set = ["RUST_MIN_STACK"] } }
+RUST_MIN_STACK = { value = "8388608", condition = { env_not_set = [
+  "RUST_MIN_STACK",
+] } }
 
 BUILD_CONTAINER_X86_URL = { value = "urm.nvidia.com/swngc-ngcc-docker-local/forge/carbide/x86-64/build-container:latest", condition = { env_not_set = [
   "BUILD_CONTAINER_X86_URL",
@@ -677,8 +679,8 @@ workspace = false
 # called by CI. If necessary separate tasks can be defined for workflows which
 # do not require everything.
 dependencies = [
-  "build-release", # Start with release builds, since some artifacts are used in integration tests
-  "test-flow",     # Then run all tests
+  "build-release",                                      # Start with release builds, since some artifacts are used in integration tests
+  "test-flow",                                          # Then run all tests
   "check-aarch64-release-container-services-page-size",
 ]
 

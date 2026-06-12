@@ -17,20 +17,38 @@ skip_core_tasks = true
 
 [env]
 # Override on the CLI:  DEV_REPO=registry.lab/nico cargo make ...
-DEV_REPO       = { value = "registry.lab/nico-api", condition = { env_not_set = ["DEV_REPO"] } }
-K8S_NAMESPACE  = { value = "forge-system",          condition = { env_not_set = ["K8S_NAMESPACE"] } }
-DEPLOYMENT     = { value = "carbide-api",           condition = { env_not_set = ["DEPLOYMENT"] } }
-CONTAINER      = { value = "carbide-api",           condition = { env_not_set = ["CONTAINER"] } }
-DOCKERFILE     = { value = "dev/docker/Dockerfile.carbide-api-localdev", condition = { env_not_set = ["DOCKERFILE"] } }
-BUILD_IMAGE    = { value = "nico-buildcontainer-x86_64",    condition = { env_not_set = ["BUILD_IMAGE"] } }
-RUNTIME_IMAGE  = { value = "nico-runtime-container-x86_64", condition = { env_not_set = ["RUNTIME_IMAGE"] } }
-CARGO_PACKAGE  = { value = "carbide-api",           condition = { env_not_set = ["CARGO_PACKAGE"] } }
-CARGO_BIN      = { value = "carbide-api",           condition = { env_not_set = ["CARGO_BIN"] } }
+DEV_REPO = { value = "registry.lab/nico-api", condition = { env_not_set = [
+  "DEV_REPO",
+] } }
+K8S_NAMESPACE = { value = "forge-system", condition = { env_not_set = [
+  "K8S_NAMESPACE",
+] } }
+DEPLOYMENT = { value = "carbide-api", condition = { env_not_set = [
+  "DEPLOYMENT",
+] } }
+CONTAINER = { value = "carbide-api", condition = { env_not_set = [
+  "CONTAINER",
+] } }
+DOCKERFILE = { value = "dev/docker/Dockerfile.carbide-api-localdev", condition = { env_not_set = [
+  "DOCKERFILE",
+] } }
+BUILD_IMAGE = { value = "nico-buildcontainer-x86_64", condition = { env_not_set = [
+  "BUILD_IMAGE",
+] } }
+RUNTIME_IMAGE = { value = "nico-runtime-container-x86_64", condition = { env_not_set = [
+  "RUNTIME_IMAGE",
+] } }
+CARGO_PACKAGE = { value = "carbide-api", condition = { env_not_set = [
+  "CARGO_PACKAGE",
+] } }
+CARGO_BIN = { value = "carbide-api", condition = { env_not_set = [
+  "CARGO_BIN",
+] } }
 
 # Computed: short git SHA -> image tag. Appends `-dirty` if the worktree has
 # uncommitted changes, so the running image's tag always reveals what shipped.
 GIT_SHA = { script = [
-  'sha=$(git rev-parse --short=8 HEAD 2>/dev/null || echo dev); if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then sha="${sha}-dirty"; fi; echo "$sha"'
+  'sha=$(git rev-parse --short=8 HEAD 2>/dev/null || echo dev); if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then sha="${sha}-dirty"; fi; echo "$sha"',
 ] }
 IMAGE = "${DEV_REPO}:${GIT_SHA}"
 
