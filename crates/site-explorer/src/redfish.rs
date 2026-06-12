@@ -1512,11 +1512,11 @@ mod tests {
     use carbide_redfish::libredfish::test_support::RedfishSim;
     use carbide_redfish::nv_redfish::NvRedfishClientPool;
     use forge_secrets::credentials::Credentials;
+    use libredfish::RedfishError;
     use libredfish::model::service_root::RedfishVendor;
+    use model::site_explorer::EndpointExplorationError;
 
     use super::{RedfishClient, map_nv_redfish_explore_error, map_redfish_error};
-    use libredfish::RedfishError;
-    use model::site_explorer::EndpointExplorationError;
 
     /// The raw HTTP body a GigaComputing AMI BMC returns for a server-level
     /// (Lighttpd) 403: an XHTML document, not a Redfish JSON error. This is the
