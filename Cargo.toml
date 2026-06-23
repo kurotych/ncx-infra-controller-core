@@ -61,7 +61,8 @@ tracing-appender = "0.2.4"
 tracing-opentelemetry = "0.32.1"
 
 # NV-Redfish
-nv-redfish = { git = "https://github.com/NVIDIA/nv-redfish", branch = "main" }
+# nv-redfish = { git = "https://github.com/NVIDIA/nv-redfish", branch = "main" }
+nv-redfish = { git = "https://github.com/shevchenko-evgeny/nv-redfish", branch = "null_memebers_fix" }
 
 ########
 # MARK: - Pinned packages that we can't upgrade due to conflicts or just bugs
