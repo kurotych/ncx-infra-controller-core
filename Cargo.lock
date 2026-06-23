@@ -7437,7 +7437,7 @@ dependencies = [
 [[package]]
 name = "nv-redfish"
 version = "0.1.0"
-source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
+source = "git+https://github.com/shevchenko-evgeny/nv-redfish?branch=null_memebers_fix#223644cd64e2287acb7171b50c251c2c794b71d2"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -7453,7 +7453,7 @@ dependencies = [
 [[package]]
 name = "nv-redfish-bmc-http"
 version = "0.1.0"
-source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
+source = "git+https://github.com/shevchenko-evgeny/nv-redfish?branch=null_memebers_fix#223644cd64e2287acb7171b50c251c2c794b71d2"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -7476,7 +7476,7 @@ dependencies = [
 [[package]]
 name = "nv-redfish-core"
 version = "0.1.0"
-source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
+source = "git+https://github.com/shevchenko-evgeny/nv-redfish?branch=null_memebers_fix#223644cd64e2287acb7171b50c251c2c794b71d2"
 dependencies = [
  "futures-core",
  "futures-io",
@@ -7490,7 +7490,7 @@ dependencies = [
 [[package]]
 name = "nv-redfish-csdl-compiler"
 version = "0.1.0"
-source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
+source = "git+https://github.com/shevchenko-evgeny/nv-redfish?branch=null_memebers_fix#223644cd64e2287acb7171b50c251c2c794b71d2"
 dependencies = [
  "clap",
  "clap_derive",
@@ -7507,7 +7507,7 @@ dependencies = [
 [[package]]
 name = "nv-redfish-schema"
 version = "0.1.0"
-source = "git+https://github.com/NVIDIA/nv-redfish?branch=main#bc57067d7a6e6a974f7c54bd3a499d6b89ef0fc5"
+source = "git+https://github.com/shevchenko-evgeny/nv-redfish?branch=null_memebers_fix#223644cd64e2287acb7171b50c251c2c794b71d2"
 dependencies = [
  "glob",
 ]

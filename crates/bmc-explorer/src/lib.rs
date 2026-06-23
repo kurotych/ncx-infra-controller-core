@@ -119,17 +119,43 @@ pub async fn nv_generate_exploration_report<B: Bmc>(
     let other_system_with_bios = systems_iter.find(|system| system.raw().bios.is_some());
     let system = other_system_with_bios.unwrap_or(first_system);
 
-    let manager = root
+    //   let mut manager = root
+    //       .managers()
+    //       .await
+    //       .map_err(Error::nv_redfish("managers"))?
+    //       .ok_or_else(Error::bmc_not_provided("managers"))?
+    //       .members()
+    //       .await
+    //       .map_err(Error::nv_redfish("managers members"))?
+    //       .into_iter()
+    //       .next()
+    //       .ok_or_else(Error::bmc_not_provided("at least one manager"))?;
+    let mut managers = root
         .managers()
         .await
         .map_err(Error::nv_redfish("managers"))?
         .ok_or_else(Error::bmc_not_provided("managers"))?
         .members()
         .await
-        .map_err(Error::nv_redfish("managers members"))?
-        .into_iter()
-        .next()
-        .ok_or_else(Error::bmc_not_provided("at least one manager"))?;
+        .map_err(Error::nv_redfish("managers members"))?;
+
+    // Prefer the manager that controls the chosen system — e.g. the iDRAC on a
+    // Dell host that also exposes HGX_BMC_0 / HGX_FabricManager_0. Fall back to
+    // the first manager for BMCs that don't populate ManagerForServers.
+
+    let manager = match managers.iter().position(|m| {
+        m.raw()
+            .links
+            .as_ref()
+            .and_then(|l| l.manager_for_servers.as_ref())
+            .is_some_and(|servers| servers.iter().any(|s| s.id() == system.odata_id()))
+    }) {
+        Some(i) => managers.swap_remove(i),
+        None => managers
+            .into_iter()
+            .next()
+            .ok_or_else(Error::bmc_not_provided("at least one manager"))?,
+    };
 
     let is_bluefield_system = system.id().into_inner() == "Bluefield";
     let system_explore_config = computer_system::Config {
