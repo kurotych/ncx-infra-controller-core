@@ -6543,7 +6543,7 @@ dependencies = [
 [[package]]
 name = "libredfish"
 version = "0.0.0"
-source = "git+https://github.com/kurotych/libredfish.git?branch=gigapatch-v2#820dab8c8ed06d313a6952ec82ddc117eb6237f0"
+source = "git+https://github.com/shevchenko-evgeny/libredfish.git?branch=dell_xe9780#93b749c6d09a62411b33e36cdc19ff6d05f0e92b"
 dependencies = [
  "chrono",
  "clap",
