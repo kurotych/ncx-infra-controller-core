@@ -268,9 +268,12 @@ impl TryFrom<rpc::machine_discovery::NetworkInterface> for NetworkInterface {
             .parse()
             .map_err(|_| RpcDataConversionError::InvalidMacAddress(mac_string.clone()))?;
 
+        let lldp = iface.lldp.map(LldpSwitchData::try_from).transpose()?;
+
         Ok(Self {
             mac_address,
             pci_properties,
+            lldp,
         })
     }
 }
@@ -288,9 +291,15 @@ impl TryFrom<NetworkInterface> for rpc::machine_discovery::NetworkInterface {
             None => None,
         };
 
+        let lldp = iface
+            .lldp
+            .map(rpc::machine_discovery::LldpSwitchData::try_from)
+            .transpose()?;
+
         Ok(Self {
             mac_address: iface.mac_address.to_string(),
             pci_properties,
+            lldp,
         })
     }
 }

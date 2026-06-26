@@ -68,6 +68,7 @@ impl Nic<'_> {
                 description: self.description.as_ref().map(|v| v.to_string()),
                 slot: Some(slot),
             }),
+            lldp: None,
         }
     }
 }

@@ -59,6 +59,7 @@ impl NicNvidiaCx7A<'_> {
                 description: Some("MT2910 Family [ConnectX-7]".into()),
                 slot: Some(slot.into()),
             }),
+            lldp: None,
         }
     }
 }

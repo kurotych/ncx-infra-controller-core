@@ -114,6 +114,48 @@ pub async fn single_run(config: &MachineInventoryUpdaterConfig) -> eyre::Result<
     Ok(())
 }
 
+/// Collect the DPU's current per-interface LLDP neighbors and report them to
+/// carbide-api as a full snapshot. Only runs on the DPU OS, where `lldpcli` is
+/// available; in other platform modes it is a no-op so we never send an empty
+/// snapshot that would wrongly reconcile away existing rows.
+pub async fn report_lldp(config: &MachineInventoryUpdaterConfig) -> eyre::Result<()> {
+    if !config.agent_platform_type.is_dpu_os() {
+        return Ok(());
+    }
+
+    let pairs = tokio::task::spawn_blocking(
+        carbide_host_support::hardware_enumeration::collect_interface_lldp,
+    )
+    .await??;
+
+    let interfaces = pairs
+        .into_iter()
+        .map(|(mac_address, lldp)| rpc::InterfaceLldp {
+            mac_address,
+            lldp: Some(lldp),
+        })
+        .collect::<Vec<_>>();
+
+    let report = rpc::LldpNeighborReport {
+        machine_id: Some(config.machine_id),
+        interfaces,
+    };
+
+    let mut client = forge_tls_client::ForgeTlsClient::retry_build(&ApiConfig::new(
+        &config.forge_api,
+        &config.forge_client_config,
+    ))
+    .await
+    .map_err(|err| eyre::eyre!("Could not connect to Forge API server: {err}"))?;
+
+    tracing::trace!("report_lldp_neighbors: {:?}", report);
+    client
+        .report_lldp_neighbors(tonic::Request::new(report))
+        .await
+        .map_err(|err| eyre::eyre!("report_lldp_neighbors gRPC call failed: {err}"))?;
+    Ok(())
+}
+
 async fn update_agent_reported_inventory(
     inventory_report: rpc::DpuAgentInventoryReport,
     client_config: &forge_tls_client::ForgeClientConfig,

@@ -191,6 +191,7 @@ async fn run_as_service(config: &Options) -> Result<(), eyre::Report> {
         Err(e) => tracing::warn!("failed to create PublishMlxDeviceReportRequest: {e:?}"),
     };
 
+    let mut next_lldp_report_time = Utc::now();
     let mut scout_stream_started = false;
     loop {
         if is_time_to_check_certs_expiry(next_certs_check_time) {
@@ -199,6 +200,14 @@ async fn run_as_service(config: &Options) -> Result<(), eyre::Report> {
 
             if check_certs_validity(&client_cert)? {
                 initial_setup(config).await?;
+            }
+        }
+
+        if Utc::now() >= next_lldp_report_time {
+            next_lldp_report_time =
+                Utc::now() + TimeDelta::seconds(config.lldp_report_interval_secs as i64);
+            if let Err(e) = report_lldp_neighbors(config, &machine_id).await {
+                tracing::warn!("Failed to report LLDP neighbors: {e:#}");
             }
         }
         let controller_response = match query_api_with_retries(config, &machine_id).await {
@@ -809,6 +818,38 @@ async fn query_api_with_retries(
 
         tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_TIMER)).await;
     }
+}
+
+/// Collect this host's current per-interface LLDP neighbors and report them to
+/// carbide-api as a full snapshot. Interfaces without a neighbor are omitted so
+/// the server reconciles (drops) neighbors that disappeared. Best-effort: a
+/// missing `lldpd`/`lldpcli` yields an empty snapshot and is logged, not fatal.
+async fn report_lldp_neighbors(
+    config: &Options,
+    machine_id: &MachineId,
+) -> Result<(), CarbideClientError> {
+    let pairs = tokio::task::spawn_blocking(
+        carbide_host_support::hardware_enumeration::collect_interface_lldp,
+    )
+    .await
+    .map_err(|e| CarbideClientError::GenericError(format!("lldp collect task: {e}")))?
+    .map_err(|e| CarbideClientError::GenericError(format!("lldp collect: {e}")))?;
+
+    let interfaces = pairs
+        .into_iter()
+        .map(|(mac_address, lldp)| rpc_forge::InterfaceLldp {
+            mac_address,
+            lldp: Some(lldp),
+        })
+        .collect::<Vec<_>>();
+
+    let mut client = client::create_forge_client(config).await?;
+    let request = tonic::Request::new(rpc_forge::LldpNeighborReport {
+        machine_id: Some(*machine_id),
+        interfaces,
+    });
+    client.report_lldp_neighbors(request).await?;
+    Ok(())
 }
 
 fn get_next_certs_check_datetime() -> CarbideClientResult<DateTime<Utc>> {

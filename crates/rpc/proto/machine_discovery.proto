@@ -74,6 +74,8 @@ message TpmDescription {
 message NetworkInterface {
   string mac_address = 1;
   PciDeviceProperties pci_properties = 2;
+  // LLDP neighbor seen on this local interface (absent if none / lldpd unavailable).
+  optional LldpSwitchData lldp = 3;
 }
 
 message InfinibandInterface {

@@ -55,6 +55,7 @@ pub mod machine;
 pub mod machine_boot_override;
 pub mod machine_interface;
 pub mod machine_interface_address;
+pub mod machine_interface_lldp;
 pub mod machine_topology;
 pub mod machine_validation;
 pub mod machine_validation_config;

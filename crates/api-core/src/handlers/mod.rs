@@ -44,6 +44,7 @@ pub mod ib_fabric;
 pub mod ib_partition;
 pub mod instance;
 pub mod instance_type;
+pub mod lldp;
 pub mod logical_partition;
 pub mod machine;
 pub mod machine_boot_interfaces;

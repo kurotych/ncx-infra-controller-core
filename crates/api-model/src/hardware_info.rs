@@ -64,6 +64,9 @@ pub struct NetworkInterface {
     pub mac_address: MacAddress,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pci_properties: Option<PciDeviceProperties>,
+    /// LLDP neighbor seen on this local interface (absent if none / lldpd unavailable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lldp: Option<LldpSwitchData>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
