@@ -154,6 +154,68 @@ fn convert_udev_to_mac(udev: String) -> Result<String, HardwareEnumerationError>
     Ok(mac)
 }
 
+/// Best-effort LLDP neighbor for a net device's kernel interface name.
+///
+/// Returns `None` when the device has no kernel name, `lldpd`/`lldpcli` is
+/// unavailable, or no neighbor is advertised on the port. Never blocks (a single
+/// `lldpcli` query per interface, unlike `wait_until_all_ports_available`).
+fn lldp_for_device(device: &Device) -> Option<rpc_discovery::LldpSwitchData> {
+    let ifname = device.sysname()?.to_str()?;
+    match dpu::get_port_lldp_info(ifname) {
+        Ok(lldp) => Some(lldp),
+        Err(e) => {
+            tracing::debug!(ifname, "no LLDP neighbor: {e}");
+            None
+        }
+    }
+}
+
+/// Read an interface's MAC from sysfs (`/sys/class/net/<ifname>/address`).
+fn read_interface_mac(ifname: &str) -> Option<String> {
+    let mac = fs::read_to_string(format!("/sys/class/net/{ifname}/address")).ok()?;
+    let mac = mac.trim();
+    if mac.is_empty() {
+        return None;
+    }
+    Some(mac.to_string())
+}
+
+/// Lightweight per-interface LLDP snapshot for periodic reporting (host + DPU).
+///
+/// Enumerates Ethernet net interfaces and returns `(local_mac, neighbor)` pairs
+/// for every interface that currently has an LLDP neighbor. Interfaces without a
+/// neighbor (or when lldpd is unavailable) are omitted, so a full-snapshot report
+/// lets the server reconcile (drop) interfaces whose neighbor disappeared.
+///
+/// This is intentionally cheap (no flint/dmidecode/nvidia-smi) so it can run on a
+/// short interval, unlike `enumerate_hardware`.
+pub fn collect_interface_lldp()
+-> Result<Vec<(String, rpc_discovery::LldpSwitchData)>, HardwareEnumerationError> {
+    let context = libudev::Context::new()?;
+    let mut enumerator = libudev::Enumerator::new(&context)?;
+    enumerator.match_subsystem("net")?;
+
+    let mut out = Vec::new();
+    for device in enumerator.scan_devices()? {
+        let Ok(pci_subclass) = convert_property_to_string(PCI_SUBCLASS, "", &device) else {
+            continue;
+        };
+        if !pci_subclass.eq_ignore_ascii_case("Ethernet controller") {
+            continue;
+        }
+        let Some(ifname) = device.sysname().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(mac) = read_interface_mac(ifname) else {
+            continue;
+        };
+        if let Some(lldp) = lldp_for_device(&device) {
+            out.push((mac, lldp));
+        }
+    }
+    Ok(out)
+}
+
 fn convert_property_to_string<'a>(
     name: &'a str,
     default_value: &'a str,
@@ -447,6 +509,7 @@ fn enumerate_hardware_inner(
                             .to_string(),
                     )?,
                     pci_properties: Some(properties_ext.pci_properties),
+                    lldp: lldp_for_device(&device),
                 });
             }
         }

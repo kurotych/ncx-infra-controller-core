@@ -167,10 +167,12 @@ impl From<&ManagedHostConfig> for HardwareInfo {
                     description: None,
                     slot: None,
                 }),
+                lldp: None,
             })
             .chain(config.non_dpu_macs.iter().map(|m| NetworkInterface {
                 mac_address: *m,
                 pci_properties: None,
+                lldp: None,
             }))
             .collect();
         // Generate a unique GUID for each InfiniBand interface in the template

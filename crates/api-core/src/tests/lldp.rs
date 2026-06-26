@@ -234,3 +234,57 @@ async fn test_lldp_topology_update(pool: sqlx::PgPool) -> Result<(), Box<dyn std
 
     Ok(())
 }
+
+/// Periodic per-interface LLDP report: upsert then full-snapshot reconcile.
+#[crate::sqlx_test]
+async fn test_report_lldp_neighbors(pool: sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
+    let env = create_test_env(pool).await;
+    let host_config = env.managed_host_config();
+    let dpu_machine_id = create_dpu_machine(&env, &host_config).await;
+
+    let lldp = rpc::machine_discovery::LldpSwitchData {
+        name: "tor-1".into(),
+        id: "mac=aa:bb:cc:dd:ee:ff".into(),
+        description: "switch desc".into(),
+        local_port: "eth0".into(),
+        ip_address: vec!["10.0.0.1".into(), "fe80::1".into()],
+        remote_port: "ifname=Ethernet1".into(),
+    };
+
+    env.api
+        .report_lldp_neighbors(tonic::Request::new(rpc::forge::LldpNeighborReport {
+            machine_id: Some(dpu_machine_id),
+            interfaces: vec![rpc::forge::InterfaceLldp {
+                mac_address: "a0:00:00:00:00:01".into(),
+                lldp: Some(lldp),
+            }],
+        }))
+        .await?;
+
+    let mut txn = env.pool.begin().await.unwrap();
+    let rows =
+        db::machine_interface_lldp::find_by_machine_id(txn.as_mut(), &dpu_machine_id).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].local_mac_address, "a0:00:00:00:00:01");
+    assert_eq!(rows[0].local_port, "eth0");
+    assert_eq!(rows[0].switch_name, "tor-1");
+    assert_eq!(rows[0].switch_id, "mac=aa:bb:cc:dd:ee:ff");
+    assert_eq!(rows[0].remote_port, "ifname=Ethernet1");
+    assert_eq!(rows[0].switch_mgmt_ips, vec!["10.0.0.1", "fe80::1"]);
+    drop(txn);
+
+    // A follow-up snapshot without that interface reconciles the row away.
+    env.api
+        .report_lldp_neighbors(tonic::Request::new(rpc::forge::LldpNeighborReport {
+            machine_id: Some(dpu_machine_id),
+            interfaces: vec![],
+        }))
+        .await?;
+
+    let mut txn = env.pool.begin().await.unwrap();
+    let rows =
+        db::machine_interface_lldp::find_by_machine_id(txn.as_mut(), &dpu_machine_id).await?;
+    assert!(rows.is_empty());
+
+    Ok(())
+}

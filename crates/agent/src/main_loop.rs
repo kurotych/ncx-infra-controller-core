@@ -932,6 +932,11 @@ impl MainLoop {
             {
                 tracing::error!(%err, "machine_inventory_updater error");
             }
+            if let Err(err) =
+                machine_inventory_updater::report_lldp(&self.inventory_updater_config).await
+            {
+                tracing::error!(%err, "lldp neighbor report error");
+            }
         }
 
         if self.options.agent_platform_type.is_dpu_os()

@@ -50,6 +50,7 @@ impl NicIntelX550 {
                 description: Some("Ethernet Controller X550".into()),
                 slot: Some(slot.into()),
             }),
+            lldp: None,
         }
     }
 }

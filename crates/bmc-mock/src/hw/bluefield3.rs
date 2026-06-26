@@ -344,6 +344,7 @@ impl Bluefield3<'_> {
                 ),
                 slot: Some(slot.into()),
             }),
+            lldp: None,
         }
     }
 
