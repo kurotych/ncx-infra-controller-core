@@ -44,61 +44,53 @@ pub struct MachineInterfaceLldp {
     pub updated: DateTime<Utc>,
 }
 
-/// Insert or update the neighbor for one (machine, local MAC) pair.
-pub async fn upsert(
-    txn: &mut PgConnection,
-    machine_id: &MachineId,
-    local_mac_address: &str,
-    lldp: &LldpSwitchData,
-) -> DatabaseResult<()> {
-    let query = r#"INSERT INTO machine_interface_lldp
-            (machine_id, local_mac_address, local_port, remote_port,
-             switch_name, switch_id, switch_description, switch_mgmt_ips, updated)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
-        ON CONFLICT (machine_id, local_mac_address) DO UPDATE SET
-            local_port=EXCLUDED.local_port,
-            remote_port=EXCLUDED.remote_port,
-            switch_name=EXCLUDED.switch_name,
-            switch_id=EXCLUDED.switch_id,
-            switch_description=EXCLUDED.switch_description,
-            switch_mgmt_ips=EXCLUDED.switch_mgmt_ips,
-            updated=now()"#;
-
-    sqlx::query(query)
-        .bind(machine_id)
-        .bind(local_mac_address)
-        .bind(&lldp.local_port)
-        .bind(&lldp.remote_port)
-        .bind(&lldp.name)
-        .bind(&lldp.id)
-        .bind(&lldp.description)
-        .bind(&lldp.ip_address)
-        .execute(txn)
-        .await
-        .map_err(|e| DatabaseError::query(query, e))?;
-
-    Ok(())
-}
-
-/// Drop rows for `machine_id` whose local MAC is not in `keep_macs`.
+/// Replace the full LLDP neighbor set for a machine: delete all existing rows,
+/// then insert `neighbors`. Atomic within `txn`.
 ///
-/// Reconciles a full-snapshot report: interfaces whose neighbor disappeared
-/// (or whole machine going neighbor-less, i.e. empty `keep_macs`) are removed.
-pub async fn delete_missing(
+/// Intended to be called only when the set actually changed (the handler diffs
+/// against the stored set first), so unchanged periodic reports cost no writes.
+/// `neighbors` is `(local_mac_address, neighbor)`.
+pub async fn replace_all(
     txn: &mut PgConnection,
     machine_id: &MachineId,
-    keep_macs: &[String],
+    neighbors: &[(String, LldpSwitchData)],
 ) -> DatabaseResult<()> {
-    // `x <> ALL('{}')` is true for every row, so an empty keep-set clears the machine.
-    let query =
-        "DELETE FROM machine_interface_lldp WHERE machine_id=$1 AND local_mac_address <> ALL($2)";
-
-    sqlx::query(query)
+    let delete = "DELETE FROM machine_interface_lldp WHERE machine_id=$1";
+    sqlx::query(delete)
         .bind(machine_id)
-        .bind(keep_macs)
-        .execute(txn)
+        .execute(&mut *txn)
         .await
-        .map_err(|e| DatabaseError::query(query, e))?;
+        .map_err(|e| DatabaseError::query(delete, e))?;
+
+    // Nothing to insert: an empty VALUES list is invalid SQL, and the delete
+    // above already cleared the machine's neighbors.
+    if neighbors.is_empty() {
+        return Ok(());
+    }
+
+    // Single multi-row INSERT (one round-trip) via QueryBuilder::push_values.
+    let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+        "INSERT INTO machine_interface_lldp \
+         (machine_id, local_mac_address, local_port, remote_port, \
+          switch_name, switch_id, switch_description, switch_mgmt_ips, updated) ",
+    );
+    builder.push_values(neighbors, |mut row, (local_mac_address, lldp)| {
+        row.push_bind(machine_id)
+            .push_bind(local_mac_address)
+            .push_bind(&lldp.local_port)
+            .push_bind(&lldp.remote_port)
+            .push_bind(&lldp.name)
+            .push_bind(&lldp.id)
+            .push_bind(&lldp.description)
+            .push_bind(&lldp.ip_address)
+            .push("now()");
+    });
+
+    builder
+        .build()
+        .execute(&mut *txn)
+        .await
+        .map_err(|e| DatabaseError::query(builder.sql(), e))?;
 
     Ok(())
 }

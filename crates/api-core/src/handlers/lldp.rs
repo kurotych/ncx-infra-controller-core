@@ -1,21 +1,7 @@
-/*
- * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+use std::collections::HashMap;
 
 use ::rpc::forge as rpc;
+use db::machine_interface_lldp::MachineInterfaceLldp;
 use model::hardware_info::LldpSwitchData;
 use tonic::{Request, Response, Status};
 
@@ -25,8 +11,12 @@ use crate::handlers::utils::convert_and_log_machine_id;
 
 /// Persist a periodic LLDP neighbor report from a running agent (host scout or
 /// DPU agent). The report is a full snapshot of the machine's current
-/// per-interface neighbors: present interfaces are upserted and interfaces no
-/// longer reported are removed (reconcile), so stale neighbors don't linger.
+/// per-interface neighbors.
+///
+/// The stored set is diffed against the report first; only a real change
+/// triggers a write (delete-all + insert), so the common unchanged report costs
+/// a single SELECT and no row churn. A neighbor that disappears (or all of them)
+/// is dropped by the replace.
 ///
 /// Writes only `machine_interface_lldp`; the discovery-time
 /// `network_devices`/`port_to_network_device_map` tables are untouched.
@@ -39,30 +29,83 @@ pub(crate) async fn report_lldp_neighbors(
     let req = request.into_inner();
     let machine_id = convert_and_log_machine_id(req.machine_id.as_ref())?;
 
-    let mut txn = api.txn_begin().await?;
-
-    let mut reported_macs: Vec<String> = Vec::with_capacity(req.interfaces.len());
+    // Desired set from the report; interfaces without a neighbor are omitted.
+    let mut desired: Vec<(String, LldpSwitchData)> = Vec::with_capacity(req.interfaces.len());
     for iface in req.interfaces {
         let Some(lldp) = iface.lldp else {
-            // No neighbor for this interface; nothing to store (it will be
-            // reconciled away below if a row existed).
             continue;
         };
         let lldp = LldpSwitchData::try_from(lldp).map_err(CarbideError::from)?;
-        db::machine_interface_lldp::upsert(&mut txn, &machine_id, &iface.mac_address, &lldp)
-            .await?;
-        reported_macs.push(iface.mac_address);
+        desired.push((iface.mac_address, lldp));
     }
 
-    db::machine_interface_lldp::delete_missing(&mut txn, &machine_id, &reported_macs).await?;
+    let mut txn = api.txn_begin().await?;
+    let existing =
+        db::machine_interface_lldp::find_by_machine_id(txn.as_pgconn(), &machine_id).await?;
 
+    if !neighbor_set_changed(&existing, &desired) {
+        tracing::trace!(%machine_id, "LLDP neighbors unchanged; skipping write");
+        return Ok(Response::new(()));
+    }
+
+    db::machine_interface_lldp::replace_all(&mut txn, &machine_id, &desired).await?;
     txn.commit().await?;
 
     tracing::debug!(
         %machine_id,
-        interfaces = reported_macs.len(),
-        "reported LLDP neighbors",
+        interfaces = desired.len(),
+        "updated LLDP neighbors",
     );
 
     Ok(Response::new(()))
+}
+
+/// Compare the stored neighbor set with the reported one, keyed by local MAC and
+/// ignoring the `updated` timestamp. Order-independent.
+fn neighbor_set_changed(
+    existing: &[MachineInterfaceLldp],
+    desired: &[(String, LldpSwitchData)],
+) -> bool {
+    if existing.len() != desired.len() {
+        return true;
+    }
+
+    // (local_port, remote_port, switch_name, switch_id, switch_description, mgmt_ips)
+    type Fields<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a [String]);
+
+    let existing_map: HashMap<&str, Fields> = existing
+        .iter()
+        .map(|r| {
+            (
+                r.local_mac_address.as_str(),
+                (
+                    r.local_port.as_str(),
+                    r.remote_port.as_str(),
+                    r.switch_name.as_str(),
+                    r.switch_id.as_str(),
+                    r.switch_description.as_str(),
+                    r.switch_mgmt_ips.as_slice(),
+                ),
+            )
+        })
+        .collect();
+
+    let desired_map: HashMap<&str, Fields> = desired
+        .iter()
+        .map(|(mac, l)| {
+            (
+                mac.as_str(),
+                (
+                    l.local_port.as_str(),
+                    l.remote_port.as_str(),
+                    l.name.as_str(),
+                    l.id.as_str(),
+                    l.description.as_str(),
+                    l.ip_address.as_slice(),
+                ),
+            )
+        })
+        .collect();
+
+    existing_map != desired_map
 }
