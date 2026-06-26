@@ -3,7 +3,7 @@
 -- Columns map directly from the LldpSwitchData message (+ parent NetworkInterface MAC).
 -- Independent of network_devices / port_to_network_device_map (those stay discovery-only).
 CREATE TABLE machine_interface_lldp (
-  machine_id          VARCHAR(64) NOT NULL REFERENCES machines(id),
+  machine_id          VARCHAR(64) NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
   local_mac_address   VARCHAR(64) NOT NULL,            -- local NIC MAC (NetworkInterface.mac_address)
   local_port          TEXT NOT NULL DEFAULT '',        -- LldpSwitchData.local_port (e.g. eth0, p0)
   remote_port         TEXT NOT NULL DEFAULT '',        -- LldpSwitchData.remote_port
