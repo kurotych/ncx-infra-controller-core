@@ -317,7 +317,8 @@ impl InternalRBACRules {
         x.perm("RemoveRouteServers", vec![ForgeAdminCLI]);
         x.perm("ReplaceRouteServers", vec![]);
         x.perm("UpdateAgentReportedInventory", vec![Agent]);
-        x.perm("ReportLldpNeighbors", vec![Agent]);
+        // Reported by both the DPU agent (Agent) and host scout (Scout).
+        x.perm("ReportLldpNeighbors", vec![Agent, Scout]);
         x.perm("UpdateInstancePhoneHomeLastContact", vec![Agent]);
         x.perm("SetHostUefiPassword", vec![ForgeAdminCLI]);
         x.perm("ClearHostUefiPassword", vec![ForgeAdminCLI]);
