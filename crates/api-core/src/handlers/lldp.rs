@@ -18,8 +18,7 @@ use crate::handlers::utils::convert_and_log_machine_id;
 /// a single SELECT and no row churn. A neighbor that disappears (or all of them)
 /// is dropped by the replace.
 ///
-/// Writes only `machine_interface_lldp`; the discovery-time
-/// `network_devices`/`port_to_network_device_map` tables are untouched.
+/// Writes only `machine_interface_lldp` table.
 pub(crate) async fn report_lldp_neighbors(
     api: &Api,
     request: Request<rpc::LldpNeighborReport>,
