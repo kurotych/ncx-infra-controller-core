@@ -115,9 +115,8 @@ pub async fn single_run(config: &MachineInventoryUpdaterConfig) -> eyre::Result<
 }
 
 /// Collect the DPU's current per-interface LLDP neighbors and report them to
-/// carbide-api as a full snapshot. Only runs on the DPU OS, where `lldpcli` is
-/// available; in other platform modes it is a no-op so we never send an empty
-/// snapshot that would wrongly reconcile away existing rows.
+/// carbide-api as a full snapshot.
+/// Never send an empty snapshot that would wrongly reconcile away existing rows.
 pub async fn report_lldp(config: &MachineInventoryUpdaterConfig) -> eyre::Result<()> {
     if !config.agent_platform_type.is_dpu_os() {
         return Ok(());

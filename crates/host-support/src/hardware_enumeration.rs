@@ -187,8 +187,7 @@ fn read_interface_mac(ifname: &str) -> Option<String> {
 /// neighbor (or when lldpd is unavailable) are omitted, so a full-snapshot report
 /// lets the server reconcile (drop) interfaces whose neighbor disappeared.
 ///
-/// This is intentionally cheap (no flint/dmidecode/nvidia-smi) so it can run on a
-/// short interval, unlike `enumerate_hardware`.
+/// This is intentionally cheap so it can run on a short interval.
 pub fn collect_interface_lldp()
 -> Result<Vec<(String, rpc_discovery::LldpSwitchData)>, HardwareEnumerationError> {
     let context = libudev::Context::new()?;
