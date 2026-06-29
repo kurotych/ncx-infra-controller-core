@@ -128,6 +128,8 @@ pub(crate) enum Command {
     MachineValidation(MachineValidation),
     #[clap(about = "Local Mellanox device management.")]
     Mlx(Mlx),
+    #[clap(name = "print-lldp", about = "Collect and print local LLDP neighbors.")]
+    Lldp(Lldp),
 }
 
 #[derive(Parser, Clone)]
@@ -154,6 +156,9 @@ pub struct MachineValidation {
     pub validataion_id: MachineValidationId,
     pub context: String,
 }
+
+#[derive(Parser, Clone)]
+pub struct Lldp {}
 
 #[derive(Parser, Clone)]
 pub struct Mlx {

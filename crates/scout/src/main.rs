@@ -269,6 +269,13 @@ async fn run_standalone(config: &Options) -> Result<(), eyre::Report> {
                     return Ok(());
                 }
             },
+            // Like the mlx subcommand, this is purely local interrogation:
+            // collect the LLDP neighbors this host sees and print them,
+            // without any API integration. Run locally and exit.
+            Command::Lldp(_) => {
+                print_lldp_neighbors()?;
+                return Ok(());
+            }
             _ => s,
         },
     };
@@ -308,11 +315,11 @@ async fn run_standalone(config: &Options) -> Result<(), eyre::Report> {
                 }),
             })
         }
-        // This will have already been caught above and
+        // These will have already been caught above and
         // handled, but we need to have it here to make
         // sure we match everything. Maybe this could
         // log something.
-        Command::Mlx(_) => return Ok(()),
+        Command::Mlx(_) | Command::Lldp(_) => return Ok(()),
     };
 
     handle_action(action, &machine_id, machine_interface_id, config).await?;
@@ -845,6 +852,24 @@ async fn report_lldp_neighbors(
         interfaces,
     });
     client.report_lldp_neighbors(request).await?;
+    Ok(())
+}
+
+/// Collect the LLDP neighbors visible on this host and print them. Purely local
+/// interrogation for troubleshooting: no API integration, mirrors what
+/// `report_lldp_neighbors` would send to carbide-api.
+fn print_lldp_neighbors() -> Result<(), eyre::Report> {
+    let pairs = carbide_host_support::hardware_enumeration::collect_interface_lldp()
+        .map_err(|e| eyre::eyre!("lldp collect: {e}"))?;
+
+    if pairs.is_empty() {
+        println!("No LLDP neighbors found.");
+        return Ok(());
+    }
+
+    for (mac_address, lldp) in pairs {
+        println!("{mac_address}: {lldp:#?}");
+    }
     Ok(())
 }
 
