@@ -85,6 +85,7 @@ pub struct LldpQueryData {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LldpInterface {
+    #[serde(default)]
     pub interface: HashMap<String, LldpQueryData>, // the key in this hash is the port #, eg. p0
 }
 
@@ -157,7 +158,7 @@ pub fn is_lldp_working(_fw_version: &str) -> bool {
 
 /// query lldp info for high speed ports p0..1, oob_net0 (some ports may not exist, warn on errors)
 /// translate to simpler tor struct for discovery info
-pub fn get_port_lldp_info(port: &str) -> Result<LldpSwitchData, DpuEnumerationError> {
+pub fn get_port_lldp_info(port: &str) -> Result<Option<LldpSwitchData>, DpuEnumerationError> {
     let lldp_json: String = get_lldp_port_info(port)?;
 
     // deserialize
@@ -188,13 +189,11 @@ pub fn get_port_lldp_info(port: &str) -> Result<LldpSwitchData, DpuEnumerationEr
         lldp_info.remote_port =
             format!("{}={}", lldp_data.port.id.id_type, lldp_data.port.id.value);
     } else {
-        warn!("Malformed LLDP JSON response, port not found");
-        return Err(DpuEnumerationError::Lldp(
-            "LLDP: port not found".to_string(),
-        ));
+        debug!("No LLDP switch data for port {port}");
+        return Ok(None);
     }
 
-    Ok(lldp_info)
+    Ok(Some(lldp_info))
 }
 
 fn get_flint_query() -> Result<String, DpuEnumerationError> {
@@ -312,9 +311,10 @@ pub fn get_dpu_info() -> Result<DpuData, DpuEnumerationError> {
         wait_until_all_ports_available();
         for port in LLDP_PORTS.iter() {
             match get_port_lldp_info(port) {
-                Ok(lldp_info) => {
+                Ok(Some(lldp_info)) => {
                     switches.push(lldp_info);
                 }
+                Ok(None) => {}
                 Err(_e) => {}
             }
         }
@@ -391,7 +391,7 @@ mod tests {
     fn get_port_lldp_info_translates_fixture() {
         scenarios!(
             run = |port| {
-                let info = dpu::get_port_lldp_info(port).map_err(drop)?;
+                let info = dpu::get_port_lldp_info(port).map_err(drop)?.ok_or(())?;
                 let first_ip = info.ip_address.first().cloned().unwrap_or_default();
                 Ok::<_, ()>((first_ip, info.ip_address.len(), info.name, info.remote_port))
             };
@@ -441,7 +441,7 @@ mod tests {
     fn get_port_lldp_info_formats_fields() {
         scenarios!(
             run = |(port, tokens): (&str, &[&str])| {
-                let info = dpu::get_port_lldp_info(port).map_err(drop)?;
+                let info = dpu::get_port_lldp_info(port).map_err(drop)?.ok_or(())?;
                 // Concatenate the formatted fields this row may inspect; every token
                 // must appear somewhere across id / description / local_port.
                 let haystack = format!("{} {} {}", info.id, info.description, info.local_port);

@@ -250,6 +250,20 @@ pub async fn start(cmdline: command_line::Options) -> eyre::Result<()> {
                 .await;
         }
 
+        // Collect the LLDP neighbors visible on this DPU and print them. Purely
+        // local interrogation for troubleshooting: no API integration, mirrors
+        // what machine_inventory_updater::report_lldp would send to carbide-api.
+        Some(AgentCommand::PrintLldp) => {
+            let pairs = carbide_host_support::hardware_enumeration::collect_interface_lldp()?;
+            if pairs.is_empty() {
+                println!("No LLDP neighbors found.");
+            } else {
+                for (mac_address, lldp) in pairs {
+                    println!("{mac_address}: {lldp:#?}");
+                }
+            }
+        }
+
         // The duppet subcommand does a single duppet run for duppet-managed files.
         Some(AgentCommand::Duppet(duppet_options)) => {
             let parsed_format = match duppet_options.summary_format.as_str() {
