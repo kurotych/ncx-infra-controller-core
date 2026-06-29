@@ -162,7 +162,7 @@ fn convert_udev_to_mac(udev: String) -> Result<String, HardwareEnumerationError>
 fn lldp_for_device(device: &Device) -> Option<rpc_discovery::LldpSwitchData> {
     let ifname = device.sysname()?.to_str()?;
     match dpu::get_port_lldp_info(ifname) {
-        Ok(lldp) => Some(lldp),
+        Ok(lldp) => lldp,
         Err(e) => {
             tracing::debug!(ifname, "no LLDP neighbor: {e}");
             None

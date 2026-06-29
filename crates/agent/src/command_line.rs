@@ -60,6 +60,9 @@ pub enum AgentCommand {
     #[clap(about = "One-off network monitor")]
     Network(NetworkOptions),
 
+    #[clap(name = "print-lldp", about = "Collect and print local LLDP neighbors.")]
+    PrintLldp,
+
     #[clap(about = "Do a duppet run for duppet-managed files")]
     Duppet(DuppetOptions),
 

@@ -84,6 +84,7 @@ pub struct LldpQueryData {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LldpInterface {
+    #[serde(default)]
     pub interface: HashMap<String, LldpQueryData>, // the key in this hash is the port #, eg. p0
 }
 
@@ -156,7 +157,7 @@ pub fn is_lldp_working(_fw_version: &str) -> bool {
 
 /// query lldp info for high speed ports p0..1, oob_net0 (some ports may not exist, warn on errors)
 /// translate to simpler tor struct for discovery info
-pub fn get_port_lldp_info(port: &str) -> Result<LldpSwitchData, DpuEnumerationError> {
+pub fn get_port_lldp_info(port: &str) -> Result<Option<LldpSwitchData>, DpuEnumerationError> {
     let lldp_json: String = get_lldp_port_info(port)?;
 
     // deserialize
@@ -183,13 +184,11 @@ pub fn get_port_lldp_info(port: &str) -> Result<LldpSwitchData, DpuEnumerationEr
         lldp_info.remote_port =
             format!("{}={}", lldp_data.port.id.id_type, lldp_data.port.id.value);
     } else {
-        warn!("Malformed LLDP JSON response, port not found");
-        return Err(DpuEnumerationError::Lldp(
-            "LLDP: port not found".to_string(),
-        ));
+        debug!("No LLDP switch data for port {port}");
+        return Ok(None);
     }
 
-    Ok(lldp_info)
+    Ok(Some(lldp_info))
 }
 
 fn get_flint_query() -> Result<String, DpuEnumerationError> {
@@ -307,9 +306,10 @@ pub fn get_dpu_info() -> Result<DpuData, DpuEnumerationError> {
         wait_until_all_ports_available();
         for port in LLDP_PORTS.iter() {
             match get_port_lldp_info(port) {
-                Ok(lldp_info) => {
+                Ok(Some(lldp_info)) => {
                     switches.push(lldp_info);
                 }
+                Ok(None) => {}
                 Err(_e) => {}
             }
         }
@@ -344,8 +344,8 @@ mod tests {
 
     #[test]
     fn validate_mgmt_ip_lldp_with_mixed_mgmt_ip_results() {
-        let oob_lldp = dpu::get_port_lldp_info("oob_net0").unwrap();
-        let p0_lldp = dpu::get_port_lldp_info("p0").unwrap();
+        let oob_lldp = dpu::get_port_lldp_info("oob_net0").unwrap().unwrap();
+        let p0_lldp = dpu::get_port_lldp_info("p0").unwrap().unwrap();
 
         assert_eq!(oob_lldp.ip_address[0], "10.180.253.66");
         assert_eq!(oob_lldp.ip_address.len(), 1);
