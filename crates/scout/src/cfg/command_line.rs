@@ -108,13 +108,6 @@ pub(crate) struct Options {
     )]
     pub tpm_path: String,
 
-    #[clap(
-        long,
-        help = "How often (sec) the service reports LLDP neighbors to carbide-api",
-        default_value_t = 300u64
-    )]
-    pub lldp_report_interval_secs: u64,
-
     #[clap(subcommand)]
     pub subcmd: Option<Command>,
 }
