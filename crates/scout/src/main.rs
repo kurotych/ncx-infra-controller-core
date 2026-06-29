@@ -190,7 +190,6 @@ async fn run_as_service(config: &Options) -> Result<(), eyre::Report> {
         Err(e) => tracing::warn!("failed to create PublishMlxDeviceReportRequest: {e:?}"),
     };
 
-    let mut next_lldp_report_time = Utc::now();
     let mut scout_stream_started = false;
     loop {
         if is_time_to_check_certs_expiry(next_certs_check_time) {
@@ -202,13 +201,10 @@ async fn run_as_service(config: &Options) -> Result<(), eyre::Report> {
             }
         }
 
-        if Utc::now() >= next_lldp_report_time {
-            next_lldp_report_time =
-                Utc::now() + TimeDelta::seconds(config.lldp_report_interval_secs as i64);
-            if let Err(e) = report_lldp_neighbors(config, &machine_id).await {
-                tracing::warn!("Failed to report LLDP neighbors: {e:#}");
-            }
+        if let Err(e) = report_lldp_neighbors(config, &machine_id).await {
+            tracing::warn!("Failed to report LLDP neighbors: {e:#}");
         }
+
         let controller_response = match query_api_with_retries(config, &machine_id).await {
             Ok(action) => action,
             Err(e) => {
