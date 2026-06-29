@@ -34,6 +34,11 @@ apt-get ${APT_SANDBOX_OPTS} -y install ${NV_PACKAGES}
 dpkg -i /build-output/forge-scout.deb
 systemctl enable forge-scout
 
+# lldpd must be running for forge-scout to collect LLDP neighbors via lldpcli.
+# Enable it explicitly rather than relying on the package postinst, which does
+# not reliably enable the service during the mkosi chroot build.
+systemctl enable lldpd
+
 # ============================================================================
 # ENABLE NVIDIA SERVICES
 # ============================================================================
