@@ -18,6 +18,13 @@
 use std::time::Duration;
 
 fn main() -> eyre::Result<()> {
+    let options = agent::Options::load();
+
+    // Purely local interrogation for troubleshooting.
+    if matches!(options.cmd, Some(agent::AgentCommand::LldpNeighbors)) {
+        return carbide_host_support::lldp_collector::print_lldp_neighbors();
+    }
+
     carbide_host_support::init_logging("nico-dpu-agent")?;
     carbide_instrument::log_events::register(&agent::instrumentation::config::get_dpu_agent_meter());
 
@@ -27,7 +34,7 @@ fn main() -> eyre::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    rt.block_on(agent::start(agent::Options::load()))?;
+    rt.block_on(agent::start(options))?;
     rt.shutdown_timeout(Duration::from_secs(2));
     Ok(())
 }
