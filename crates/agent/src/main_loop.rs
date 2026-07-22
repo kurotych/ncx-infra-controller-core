@@ -411,6 +411,14 @@ pub async fn setup_and_run(
         .as_ref()
         .map(|prefix| InterfaceTranslationMode::Prepend(prefix.clone()));
 
+    // Built here (before the struct literal moves the fields below) so the
+    // reporter can carry its own copies of the loop-invariant connection params.
+    let lldp_reporter = carbide_host_support::lldp_report::LldpReporter::new(
+        machine_id,
+        forge_api_server.clone(),
+        forge_client_config.as_ref().clone(),
+    );
+
     let mut main_loop = MainLoop {
         forge_client_config,
         build_version,
@@ -427,6 +435,7 @@ pub async fn setup_and_run(
         inventory_updater_time: std::time::Instant::now(),
         started_at: std::time::Instant::now(),
         inventory_updater_config,
+        lldp_reporter,
         options,
         agent_config,
         forge_api_server,
@@ -464,6 +473,7 @@ struct MainLoop {
     version_check_time: std::time::Instant,
     inventory_updater_time: std::time::Instant,
     inventory_updater_config: MachineInventoryUpdaterConfig,
+    lldp_reporter: carbide_host_support::lldp_report::LldpReporter,
     options: command_line::RunOptions,
     agent_config: AgentConfig,
     forge_api_server: String,
@@ -1169,6 +1179,25 @@ impl MainLoop {
         self.client_cert_renewer
             .renew_certificates_if_necessary(None)
             .await;
+
+        // Report LLDP neighbors every iteration; the reporter's send-if-changed
+        // cache keeps the actual RPC rare, and collection is off-loaded to a
+        // blocking thread. Only DPU OS runs lldpd/lldpcli.
+        if self.options.agent_platform_type.is_dpu_os() {
+            use carbide_host_support::lldp_report::ReportOutcome;
+            match self.lldp_reporter.report_if_changed().await {
+                Ok(ReportOutcome::Sent) => {
+                    tracing::info!("Reported LLDP neighbors successfully")
+                }
+                Ok(ReportOutcome::UnchangedSkipped) => {
+                    tracing::debug!("LLDP neighbors unchanged; skipping report")
+                }
+                Ok(ReportOutcome::EmptySkipped) => {
+                    tracing::debug!("No LLDP neighbors found; skipping report")
+                }
+                Err(err) => tracing::error!(%err, "lldp neighbor report error"),
+            }
+        }
 
         if now > self.inventory_updater_time {
             self.inventory_updater_time =

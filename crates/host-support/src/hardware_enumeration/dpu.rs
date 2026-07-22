@@ -19,6 +19,8 @@ use carbide_utils::cmd::{Cmd, CmdError};
 use regex::Regex;
 use rpc::machine_discovery::DpuData;
 
+use crate::lldp_collector;
+
 #[derive(thiserror::Error, Debug)]
 pub enum DpuEnumerationError {
     #[error("failed reading basic DPU info: {0}")]
@@ -140,6 +142,15 @@ pub fn get_dpu_info() -> Result<DpuData, DpuEnumerationError> {
         factory_mac.insert(14, ':');
     }
 
+    let switches = lldp_collector::collect_lldp_neighbors()
+        .map_err(
+            |e| tracing::warn!(error = %e, "Failed to collect LLDP neighbors for DPU discovery"),
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| v.switch)
+        .collect();
+
     let dpu_info = DpuData {
         part_number: part_number[0].clone(),
         part_description: device_description[0].clone(),
@@ -147,9 +158,7 @@ pub fn get_dpu_info() -> Result<DpuData, DpuEnumerationError> {
         factory_mac_address: factory_mac,
         firmware_version: fw_ver[0].clone(),
         firmware_date: fw_date[0].clone(),
-        // Left empty here; LLDP neighbors are collected and reported separately
-        // by the lldp_collector (lldp_reporter will be done in next PRs).
-        switches: vec![],
+        switches,
     };
     Ok(dpu_info)
 }

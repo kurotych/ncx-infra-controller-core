@@ -27,6 +27,7 @@ use carbide_uuid::machine::MachineId;
 use cfg::{AutoDetect, Command, MlxAction, Mode, Options};
 use chrono::{DateTime, Days, TimeDelta, Utc};
 use clap::CommandFactory;
+use forge_tls::client_config::ClientCert;
 use libmlx::device::cmd::device::args::DeviceArgs;
 use libmlx::device::cmd::device::cmds::handle as handle_mlx_device;
 use libmlx::device::discovery::discover_device;
@@ -34,6 +35,7 @@ use libmlx::lockdown::cmd::cmds::handle_lockdown as handle_mlx_lockdown;
 use once_cell::sync::Lazy;
 use rpc::forge::ForgeAgentControlResponse;
 use rpc::forge_agent_control_response::Action;
+use rpc::forge_tls_client::ForgeClientConfig;
 use rpc::protos::mlx_device::{
     FirmwareFlashReport as FirmwareFlashReportPb, LockStatus, MlxObservation, MlxObservationReport,
     PublishMlxObservationReportRequest,
@@ -243,6 +245,20 @@ async fn run_as_service(config: &Options) -> Result<(), eyre::Report> {
         ),
     };
 
+    // Report LLDP neighbors on each poll, re-sending only when the snapshot
+    // changes. The reporter's cache must live across loop iterations.
+    let mut lldp_reporter = carbide_host_support::lldp_report::LldpReporter::new(
+        machine_id,
+        config.api.clone(),
+        ForgeClientConfig::new(
+            config.root_ca.clone(),
+            Some(ClientCert {
+                cert_path: config.client_cert.clone(),
+                key_path: config.client_key.clone(),
+            }),
+        ),
+    );
+
     let mut scout_stream_started = false;
     loop {
         if is_time_to_check_certs_expiry(next_certs_check_time) {
@@ -256,6 +272,23 @@ async fn run_as_service(config: &Options) -> Result<(), eyre::Report> {
                 initial_setup(config).await?;
             }
         }
+
+        {
+            use carbide_host_support::lldp_report::ReportOutcome;
+            match lldp_reporter.report_if_changed().await {
+                Ok(ReportOutcome::Sent) => {
+                    tracing::info!("Reported LLDP neighbors successfully")
+                }
+                Ok(ReportOutcome::UnchangedSkipped) => {
+                    tracing::debug!("LLDP neighbors unchanged; skipping report")
+                }
+                Ok(ReportOutcome::EmptySkipped) => {
+                    tracing::debug!("No LLDP neighbors found; skipping report")
+                }
+                Err(e) => tracing::warn!(error = %e, "Failed to report LLDP neighbors"),
+            }
+        }
+
         let controller_response = match query_api_with_retries(config, &machine_id).await {
             Ok(action) => action,
             Err(e) => {
