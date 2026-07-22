@@ -400,7 +400,7 @@ pub async fn start(cmdline: command_line::Options) -> eyre::Result<()> {
         }
 
         Some(AgentCommand::LldpNeighbors) => {
-            let neighbors = carbide_host_support::lldp_collector::collect_lldp_neighbors()?;
+            let neighbors = carbide_host_support::lldp_collector::collect_lldp_neighbors_sync()?;
             println!("{neighbors:#?}");
         }
 

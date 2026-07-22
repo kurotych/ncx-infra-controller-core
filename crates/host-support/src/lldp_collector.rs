@@ -2,11 +2,19 @@
 //! parsing its JSON, and dropping self-loopback entries.
 
 use std::fs;
+use std::io::Read;
+use std::process::{Command as StdCommand, Stdio};
+use std::time::Duration;
 
 use ::rpc::machine_discovery as rpc_discovery;
-use carbide_utils::cmd::Cmd;
 use serde::{Deserialize, Serialize};
+use tokio::process::Command as TokioCommand;
 use tracing::{debug, warn};
+use wait_timeout::ChildExt;
+
+/// Per-invocation cap for each `lldpcli` call (sync and async), so a wedged
+/// `lldpd` can't stall a caller. On timeout the child is killed.
+const LLDPCLI_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(thiserror::Error, Debug)]
 pub enum LldpCollectorError {
@@ -99,11 +107,34 @@ pub struct LldpResponse {
 }
 
 /// Returns one `LldpNeighbor` per LLDP neighbor, filtering out self-loopback ones.
-pub fn collect_lldp_neighbors() -> LldpCollectorResult<Vec<LldpNeighbor>> {
-    let local_chassis_id = get_local_chassis_id();
+///
+/// Synchronous, for callers not on a Tokio runtime (hardware enumeration,
+/// one-shot CLI). Each `lldpcli` call is still timeout-bounded and killed on
+/// timeout. On a Tokio runtime, prefer [`collect_lldp_neighbors_async`].
+pub fn collect_lldp_neighbors_sync() -> LldpCollectorResult<Vec<LldpNeighbor>> {
+    let local_chassis_id = get_local_chassis_id_sync();
+    Ok(into_neighbors(
+        local_chassis_id,
+        get_all_lldp_neighbors_sync()?,
+    ))
+}
 
-    Ok(get_all_lldp_neighbors()?
-        .into_iter()
+/// Async counterpart of [`collect_lldp_neighbors_sync`] for callers on a Tokio
+/// runtime (the periodic reporter). Behaves identically; the only difference is
+/// that the timeout is driven by the runtime rather than a blocking wait.
+pub async fn collect_lldp_neighbors_async() -> LldpCollectorResult<Vec<LldpNeighbor>> {
+    let local_chassis_id = get_local_chassis_id_async().await;
+    let all = get_all_lldp_neighbors_async().await?;
+    Ok(into_neighbors(local_chassis_id, all))
+}
+
+/// Drop self-loopback neighbors and pair each remaining one with its local NIC
+/// MAC. Shared by the sync and async collectors.
+fn into_neighbors(
+    local_chassis_id: Option<LldpId>,
+    all: Vec<rpc_discovery::LldpSwitchData>,
+) -> Vec<LldpNeighbor> {
+    all.into_iter()
         // Unknown local chassis id -> filter nothing: a spurious self-entry
         // beats a lost fabric link.
         .filter(|lldp| {
@@ -117,19 +148,101 @@ pub fn collect_lldp_neighbors() -> LldpCollectorResult<Vec<LldpNeighbor>> {
                 switch: lldp,
             })
         })
-        .collect())
+        .collect()
+}
+
+/// Run `lldpcli` synchronously, killing the child if it exceeds
+/// [`LLDPCLI_TIMEOUT`]. stdout is drained on a helper thread so a full pipe
+/// buffer can't deadlock the blocking wait. Returns stdout as a `String`.
+fn run_lldpcli_sync(args: &[&str]) -> LldpCollectorResult<String> {
+    let mut child = StdCommand::new("lldpcli")
+        .args(args)
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| LldpCollectorError::Lldp(format!("couldn't spawn lldpcli: {e}")))?;
+
+    // Drain stdout concurrently: if lldpcli filled the pipe buffer while we
+    // blocked in `wait_timeout`, it could deadlock waiting for us to read.
+    let mut stdout = child.stdout.take().expect("stdout is piped");
+    let reader = std::thread::spawn(move || {
+        let mut buf = String::new();
+        stdout.read_to_string(&mut buf).map(|_| buf)
+    });
+
+    let status = match child
+        .wait_timeout(LLDPCLI_TIMEOUT)
+        .map_err(|e| LldpCollectorError::Lldp(format!("waiting for lldpcli: {e}")))?
+    {
+        Some(status) => status,
+        None => {
+            // Timed out: killing the child closes the pipe, unblocking the reader.
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = reader.join();
+            return Err(LldpCollectorError::Lldp(format!(
+                "lldpcli timed out after {}s",
+                LLDPCLI_TIMEOUT.as_secs()
+            )));
+        }
+    };
+
+    let stdout = reader
+        .join()
+        .map_err(|_| LldpCollectorError::Lldp("lldpcli stdout reader thread panicked".into()))?
+        .map_err(|e| LldpCollectorError::Lldp(format!("reading lldpcli stdout: {e}")))?;
+
+    if !status.success() {
+        return Err(LldpCollectorError::Lldp(format!(
+            "lldpcli exited unsuccessfully: {status}"
+        )));
+    }
+    Ok(stdout)
+}
+
+/// Run `lldpcli` on the Tokio runtime, killing the child if it exceeds
+/// [`LLDPCLI_TIMEOUT`]. `kill_on_drop` guarantees a timed-out invocation is
+/// terminated rather than orphaned. Returns stdout as a `String`.
+async fn run_lldpcli_async(args: &[&str]) -> LldpCollectorResult<String> {
+    let mut command = TokioCommand::new("lldpcli");
+    command.args(args).kill_on_drop(true);
+
+    let output = tokio::time::timeout(LLDPCLI_TIMEOUT, command.output())
+        .await
+        .map_err(|_| {
+            LldpCollectorError::Lldp(format!(
+                "lldpcli timed out after {}s",
+                LLDPCLI_TIMEOUT.as_secs()
+            ))
+        })?
+        .map_err(|e| LldpCollectorError::Lldp(format!("couldn't run lldpcli: {e}")))?;
+
+    if !output.status.success() {
+        return Err(LldpCollectorError::Lldp(format!(
+            "lldpcli exited unsuccessfully: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    String::from_utf8(output.stdout).map_err(|e| LldpCollectorError::Lldp(e.to_string()))
 }
 
 /// Every LLDP neighbor across all interfaces lldpd monitors.
 ///
 /// Returns an empty vec when no neighbor is advertised.
-fn get_all_lldp_neighbors() -> LldpCollectorResult<Vec<rpc_discovery::LldpSwitchData>> {
-    let out = Cmd::new("lldpcli")
-        .args(vec!["-f", "json0", "show", "neighbors", "details"])
-        .output()
+fn get_all_lldp_neighbors_sync() -> LldpCollectorResult<Vec<rpc_discovery::LldpSwitchData>> {
+    let out = run_lldpcli_sync(&["-f", "json0", "show", "neighbors", "details"]).map_err(|e| {
+        warn!(error = %e, "Could not discover LLDP neighbors");
+        e
+    })?;
+    parse_lldp_neighbors(&out)
+}
+
+/// Async counterpart of [`get_all_lldp_neighbors_sync`].
+async fn get_all_lldp_neighbors_async() -> LldpCollectorResult<Vec<rpc_discovery::LldpSwitchData>> {
+    let out = run_lldpcli_async(&["-f", "json0", "show", "neighbors", "details"])
+        .await
         .map_err(|e| {
             warn!(error = %e, "Could not discover LLDP neighbors");
-            LldpCollectorError::Lldp(e.to_string())
+            e
         })?;
     parse_lldp_neighbors(&out)
 }
@@ -151,10 +264,17 @@ fn is_self_loopback(neighbor: &rpc_discovery::LldpSwitchData, own: &LldpId) -> b
 /// Chassis id this host's lldpd advertises (`lldpcli -f json0 show chassis`).
 ///
 /// `None` when lldpd is unavailable or the output is malformed.
-fn get_local_chassis_id() -> Option<LldpId> {
-    let out = Cmd::new("lldpcli")
-        .args(vec!["-f", "json0", "show", "chassis"])
-        .output()
+fn get_local_chassis_id_sync() -> Option<LldpId> {
+    let out = run_lldpcli_sync(&["-f", "json0", "show", "chassis"])
+        .map_err(|e| warn!(error = %e, "Could not read local LLDP chassis"))
+        .ok()?;
+    parse_local_chassis_id(&out)
+}
+
+/// Async counterpart of [`get_local_chassis_id_sync`].
+async fn get_local_chassis_id_async() -> Option<LldpId> {
+    let out = run_lldpcli_async(&["-f", "json0", "show", "chassis"])
+        .await
         .map_err(|e| warn!(error = %e, "Could not read local LLDP chassis"))
         .ok()?;
     parse_local_chassis_id(&out)

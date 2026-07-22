@@ -2106,6 +2106,7 @@ dependencies = [
  "uname",
  "url",
  "uuid",
+ "wait-timeout",
  "x509-parser",
 ]
 

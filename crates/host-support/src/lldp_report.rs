@@ -21,14 +21,12 @@ use ::rpc::forge::{InterfaceLldp, LldpNeighborReport};
 use ::rpc::forge_tls_client::{ApiConfig, ForgeClientConfig, ForgeTlsClient};
 use carbide_uuid::machine::MachineId;
 
-use crate::lldp_collector::collect_lldp_neighbors;
+use crate::lldp_collector::collect_lldp_neighbors_async;
 
 #[derive(thiserror::Error, Debug)]
 pub enum LldpReportError {
     #[error("LLDP collection failed: {0}")]
     Collect(String),
-    #[error("LLDP collection task panicked: {0}")]
-    Join(String),
     #[error("Could not connect to Forge API server: {0}")]
     Connect(String),
     #[error("report_lldp_neighbors gRPC call failed: {0}")]
@@ -116,11 +114,11 @@ impl LldpReporter {
     }
 }
 
-/// Collect the current LLDP snapshot.
+/// Collect the current LLDP snapshot. Each `lldpcli` call is timeout-bounded and
+/// killed on timeout, so a wedged `lldpd` fails this poll rather than hanging it.
 async fn collect_snapshot() -> Result<Vec<InterfaceLldp>, LldpReportError> {
-    let neighbors = tokio::task::spawn_blocking(collect_lldp_neighbors)
+    let neighbors = collect_lldp_neighbors_async()
         .await
-        .map_err(|e| LldpReportError::Join(e.to_string()))?
         .map_err(|e| LldpReportError::Collect(e.to_string()))?;
 
     Ok(neighbors

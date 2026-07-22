@@ -22,7 +22,7 @@ fn main() -> eyre::Result<()> {
 
     // Purely local interrogation for troubleshooting.
     if matches!(options.cmd, Some(agent::AgentCommand::LldpNeighbors)) {
-        let neighbors = carbide_host_support::lldp_collector::collect_lldp_neighbors()?;
+        let neighbors = carbide_host_support::lldp_collector::collect_lldp_neighbors_sync()?;
         println!("{neighbors:#?}");
         return Ok(());
     }

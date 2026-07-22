@@ -62,6 +62,7 @@ tracing-subscriber = { features = [
 ], workspace = true }
 tryhard = { workspace = true }
 uname = { workspace = true }
+wait-timeout = { optional = true, workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 x509-parser = { workspace = true }
@@ -77,4 +78,4 @@ workspace = true
 
 [features]
 default = ["linux-build"]
-linux-build = ["libudev", "procfs"]
+linux-build = ["libudev", "procfs", "wait-timeout"]
